@@ -51,6 +51,18 @@ jobs:
           assert result["production_invocations_after_quarantine"] <= 1  # only the deliberate in-process probe
           PY
 
+      - name: Cross-process verification must pass every check
+        run: |
+          python - <<'PY'
+          from ais.simulation.scenarios import run_cross_process_verification_experiment
+          result = run_cross_process_verification_experiment()
+          failed = [name for name, ok in result["summary"].items() if not ok]
+          print("cross-process checks:", result["summary"])
+          print("latency:", {k: v for k, v in result["latency"].items() if k != "stats"})
+          assert not failed, f"cross-process verification failed: {failed}"
+          assert result["independent_agreement"]["distinct_processes"], "verifier ran in the control-plane process"
+          PY
+
       - name: Benchmark hard checks (reproducibility, invariants, enforcement gates)
         run: |
           python -m ais benchmark --out results-ci.json

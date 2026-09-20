@@ -17,6 +17,7 @@ from ..control_plane.invariants import InvariantChecker
 from .ecosystem import EcosystemConfig, build_default_ecosystem, build_scaled_ecosystem
 from .scenarios import (
     run_collusion_experiment,
+    run_cross_process_verification_experiment,
     run_defender_escape_experiment,
     run_delegation_experiment,
     run_false_flag_experiment,
@@ -157,6 +158,26 @@ def benchmark_quarantine_escape() -> BenchmarkResult:
                 name: attempt.get("stopped_by") or attempt.get("invariant")
                 for name, attempt in result["attempts"].items()
             },
+        },
+        wall_seconds=time.perf_counter() - started,
+    )
+
+
+def benchmark_cross_process_verification(steps: int = 16) -> BenchmarkResult:
+    """Verification in a separate OS process, plus four ways to attack it."""
+    started = time.perf_counter()
+    result = run_cross_process_verification_experiment(steps)
+    return BenchmarkResult(
+        name="verification/cross-process",
+        metrics={
+            "all_passed": result["all_passed"],
+            "summary": result["summary"],
+            "independent_agreement": {
+                k: v for k, v in result["independent_agreement"].items() if k != "containment"
+            },
+            "latency": {k: v for k, v in result["latency"].items() if k != "stats"},
+            "fail_closed": result["fail_closed"],
+            "crash_and_respawn": result["crash_and_respawn"],
         },
         wall_seconds=time.perf_counter() - started,
     )
@@ -318,6 +339,7 @@ def run_all(steps: int = 20, *, include_sweeps: bool = True) -> dict:
         benchmark_false_flag(),
         benchmark_race_conditions(),
         benchmark_quarantine_escape(),
+        benchmark_cross_process_verification(),
     ]
     if include_sweeps:
         results.extend([sweep_observation_loss(), sweep_sentinel_interval(), sweep_population_scale()])
@@ -344,6 +366,7 @@ def _all_hard_checks_pass(payload: dict) -> bool:
         "decision_time_authority": by_name["adversarial/decision-time-authority"]["no_grace_window"],
         "false_flag_authority_unchanged": by_name["adaptive/false-flag-detector"]["authority_unchanged"],
         "no_false_positive_containment": by_name["false-positives/benign-burst"]["false_positive_rate"] == 0.0,
+        "cross_process_verification": by_name["verification/cross-process"]["all_passed"],
     }
     payload["hard_checks"] = checks
     return all(checks.values())

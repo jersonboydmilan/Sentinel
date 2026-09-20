@@ -36,7 +36,7 @@ true, and the number that reports it.
 | **B. Authority drift** | typed components (capability, purpose, behavioural, delegation, communication, credential, escalation), noisy-OR | [drift.py](../ais/observatory/drift.py) | `ObservatoryTests`, gradual-drift experiment | drift 1.0 across 7 components for AGENT-A; 6-step latency for slow drift |
 | **C. Immune memory** | ordered signatures, verification-gated writes, prior bounded at ±0.15, negative score for false positives | [memory.py](../ais/immune_system/memory.py) | `ImmuneMemoryTests`, key experiment | AGENT-B matched 0.99, still not contained until own evidence |
 | **D. Defensive authority** | separate namespace, partitioned across 6 agents, offensive verbs unrepresentable | [capabilities.py](../ais/control_plane/capabilities.py), [defensive_agents/](../ais/defensive_agents/) | `tests/defender_security/` | 0 defensive violations across every workload |
-| **E. Recursive governance** | defenders governed by the same gateway; two-party attestation for revocation; invariant checker over live state | [sentinel.py](../ais/defensive_agents/sentinel.py), [invariants.py](../ais/control_plane/invariants.py) | section 17 experiment, `MultiPartyAttestationTests` | 12/12 escape paths denied; single verifier → HOLD |
+| **E. Recursive governance** | defenders governed by the same gateway; two-party attestation for revocation; out-of-process verification; invariant checker over live state | [sentinel.py](../ais/defensive_agents/sentinel.py), [verifier/](../ais/verifier/), [invariants.py](../ais/control_plane/invariants.py) | section 17 experiment, `MultiPartyAttestationTests`, `test_cross_process_verification.py` | 12/12 escape paths denied; single verifier → HOLD; 10/10 cross-process checks |
 
 ## D. Design decisions that are themselves claims
 
@@ -44,6 +44,7 @@ true, and the number that reports it.
 |---|---|---|
 | Two-party verification (detector ≠ auditor) | accusation must not equal action | false-flag experiment: fabricated flag → INCONCLUSIVE → zero containment; observation-loss sweep: flag FPR 0.50 at 25% loss while containment FPR stays 0.00 |
 | Multi-party attestation for revocation | one compromised verifier must not destroy authority | `MultiPartyAttestationTests`: single verifier → HOLD; one verifier repeating itself is still one opinion |
+| Cross-process verification | the verifier should *receive* the chain, not share memory with what it audits | `verification/cross-process`: 10/10 checks - agreement across processes, doctored chain and false head REJECTED, forged verdict rejected, outage fails closed |
 | Escalate, do not contain, on relationship risk | an agent that stayed inside its grant should not lose authority | collusion experiment: 0 denials per agent, chain stopped by `ESCALATE`, no containment, authority intact |
 | Graduated, reversibility-ordered response | irreversible actions need the highest evidence bar | `ACTION_CONFIDENCE_GATES`; POL-110 (two verifiers, ≥0.85) |
 | Context-bound grants | authority should be scoped to the task it was issued for | `ContextBoundGrantTests` |
@@ -56,6 +57,6 @@ true, and the number that reports it.
 |---|---|---|
 | detection efficacy against adaptive attackers | adversaries are scripts | [evaluation §0, §7](evaluation.md) |
 | resistance to in-process code execution | the control plane's own process is the trust boundary | [threat-model §5](threat-model.md), quarantine suite row 3 |
-| physical independence of verification | same process today | [evaluation §1.3](evaluation.md) |
+| host-level independence of verification | the split is across processes on one host, under one user | [evaluation §1.3, §4.4a](evaluation.md) |
 | policy correctness | integrity ≠ correctness | [evaluation §7](evaluation.md) |
 | defence against the human root or key holder | trusted by construction | [threat-model §5](threat-model.md) |

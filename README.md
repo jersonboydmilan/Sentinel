@@ -63,6 +63,7 @@ the audit chain.
 | cross-agent collusion | `ais/observatory/collusion.py` |
 | runtime invariant checking | `ais/control_plane/invariants.py` |
 | defensive agents | `ais/defensive_agents/` |
+| out-of-process verification | `ais/verifier/` |
 | trace / review tooling | `ais/observatory/trace.py` |
 
 ## Architectural invariants
@@ -111,6 +112,8 @@ agent-immune-system/
 │   ├── immune_system/  classification, signatures, memory, verification, response
 │   ├── defensive_agents/ detector, auditor, containment, forensics, recovery, sentinel
 │   ├── quarantine/     sandbox, manager, replay
+│   ├── verifier/       out-of-process verification: protocol, service,
+│   │                   client, chain-only evidence reconstruction
 │   └── simulation/     agents, ecosystem, scenarios, metrics, benchmark
 ├── tests/           unit, integration, adversarial (20 cases + adaptive),
 │                    delegation, defender_security, property
@@ -152,6 +155,7 @@ Adaptive and relationship-level adversaries:
 | split-capability collusion | 0 denials for either agent (neither exceeded its authority); chain detected at 0.85 and stopped by `ESCALATE`; **no containment, no authority lost** |
 | compromised detector fabricates evidence | both auditors return INCONCLUSIVE; 0 containment; victim authority unchanged; detector's own containment attempt denied |
 | revocation with one verifier | `HOLD` — two independent verifiers required (POL-110) |
+| verification in a separate OS process | identical verdicts to the in-process auditors; doctored chain and false head **REJECTED**; forged verdict rejected; outage fails closed (containment stays HOLD); ~10 ms round trip vs 2.7 ms in-process |
 | decision-time races | restriction, expiry and revocation all take effect on the **next** submission; no grace window |
 | 90% telemetry loss | detection 0.83, but prevention **1.00** and containment false positives **0.00** at every loss level |
 

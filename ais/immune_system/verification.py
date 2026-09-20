@@ -37,6 +37,10 @@ class Verification:
     classification: str = ""
     evidence_digest: str = ""
     consumed_by: tuple[str, ...] = ()
+    #: "in-process" or "cross-process". A cross-process verdict was produced by
+    #: a separate OS process that saw only the serialised audit chain.
+    transport: str = "in-process"
+    chain_head: str = ""
 
     @property
     def valid(self) -> bool:
@@ -52,6 +56,7 @@ class Verification:
             "reproduced": self.reproduced,
             "classification": self.classification,
             "evidence": list(self.evidence),
+            "transport": self.transport,
         }
 
 
@@ -73,6 +78,8 @@ class VerificationLedger:
         evidence: Iterable[str],
         reproduced: bool,
         classification: str = "",
+        transport: str = "in-process",
+        chain_head: str = "",
     ) -> Verification:
         if verifier_id == subject_id:
             raise VerificationError("an agent may not verify itself", verifier=verifier_id)
@@ -90,6 +97,8 @@ class VerificationLedger:
             at=self._clock.now,
             classification=classification,
             evidence_digest=digest_of(sorted(evidence)),
+            transport=transport,
+            chain_head=chain_head,
         )
         self._records[verification.verification_id] = verification
         self._audit.append(
@@ -99,6 +108,39 @@ class VerificationLedger:
             payload=verification.as_dict(),
         )
         return verification
+
+    def record_remote(
+        self,
+        *,
+        verifier_id: str,
+        subject_id: str,
+        response: dict,
+    ) -> Verification:
+        """Record a verdict produced by the out-of-process verifier.
+
+        The response has already been authenticated by ``RemoteVerifier`` (HMAC
+        over the payload, matching request id and nonce). What is enforced here
+        is the control plane's own rule: the verifier principal must hold
+        ``agent.analyze``, and a verdict only counts as *reproduced* if the
+        separate process also found the chain intact.
+        """
+        if response.get("subject_id") != subject_id:
+            raise VerificationError("verdict subject mismatch", expected=subject_id, got=response.get("subject_id"))
+        reproduced = bool(response.get("chain_valid")) and response.get("verdict") == "CONFIRMED"
+        return self.record(
+            verifier_id=verifier_id,
+            subject_id=subject_id,
+            verdict=str(response.get("verdict", "INCONCLUSIVE")),
+            confidence=float(response.get("confidence", 0.0)),
+            evidence=tuple(response.get("evidence", ())),
+            reproduced=reproduced,
+            classification=str(response.get("claimed_classification", "")),
+            transport="cross-process",
+            chain_head=str(response.get("chain_head", "")),
+        )
+
+    def by_transport(self, transport: str) -> list[Verification]:
+        return [v for v in self._records.values() if v.transport == transport]
 
     def get(self, verification_id: str) -> Verification | None:
         return self._records.get(verification_id)
