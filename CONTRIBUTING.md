@@ -74,6 +74,13 @@ A change that alters a claim, a metric or a limitation updates the docs in the
 same pull request. `docs/claims-map.md` must keep pointing at real code and real
 tests; `docs/evaluation.md` must keep stating what the numbers do *not* show.
 
+## Credit
+
+Contributors are listed in [CONTRIBUTORS.md](CONTRIBUTORS.md) by role. Add
+yourself in the same pull request as your work. Commit with an email registered
+on your GitHub account (or your `@users.noreply.github.com` address) so the work
+is attributed to you.
+
 ## Commit conventions
 
 One behavioural change per commit. State the invariant the change protects in

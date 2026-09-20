@@ -4,7 +4,9 @@ message: "If you use this prototype or its results, please cite it."
 type: software
 authors:
   - family-names: Milan
-    given-names: Boyd
+    given-names: Jerson Boyd
+    alias: jersonboydmilan
+    website: "https://github.com/jersonboydmilan"
 repository-code: "https://github.com/jersonboydmilan/sentinel"
 abstract: >-
   A research prototype investigating whether an ecosystem of autonomous AI

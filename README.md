@@ -240,7 +240,10 @@ properties**, not a claim about detection efficacy against real-world attackers
 ## Contributing & security
 
 [CONTRIBUTING.md](CONTRIBUTING.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) ·
-[SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md)
+[SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md) ·
+[CONTRIBUTORS.md](CONTRIBUTORS.md)
+
+Maintained by [@jersonboydmilan](https://github.com/jersonboydmilan).
 
 The most valuable contribution is a **failing test**: the claims and the
 experiment that would falsify each one are listed in
