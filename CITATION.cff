@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: "Agent Immune System (SENTINEL): a control architecture for autonomous AI-agent ecosystems"
+title: "SENTINEL: an authority-attenuating immune architecture for AI agents"
 message: "If you use this prototype or its results, please cite it."
 type: software
 authors:

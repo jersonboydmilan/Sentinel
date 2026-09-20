@@ -1,7 +1,8 @@
-"""Agent Immune System (AIS), codename SENTINEL.
+"""SENTINEL - an authority-attenuating immune architecture for AI agents.
 
-A research prototype of a control architecture for maintaining behavioural,
-authority and operational integrity across autonomous AI-agent ecosystems.
+A research prototype in which authority only ever attenuates: across agents,
+across delegation chains, and across the defensive agents themselves. The
+package name ``ais`` is the concept it implements, the Agent Immune System.
 
 Typical use:
 

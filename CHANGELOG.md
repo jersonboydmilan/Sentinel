@@ -6,6 +6,12 @@ versioning is [semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [0.2.0] - 2026-09-20
 
+### Changed (naming)
+
+* The project presents as **SENTINEL — Authority-Attenuating Immune
+  Architecture for AI Agents**. The concept and the package keep their names:
+  the Agent Immune System, importable as `ais`.
+
 ### Added
 
 * **Learning adversary** (`adaptive/learning-adversary`): an adversary that

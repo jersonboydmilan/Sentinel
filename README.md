@@ -1,8 +1,10 @@
 <div align="center">
 
-# Agent Immune System · **SENTINEL**
+# SENTINEL
 
-**A control architecture for behavioural, authority and operational integrity across autonomous AI-agent ecosystems.**
+### Authority-Attenuating Immune Architecture for AI Agents
+
+**An immune architecture in which authority only ever attenuates — across agents, delegation chains, and the defenders themselves.**
 
 [![CI](https://github.com/jersonboydmilan/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/jersonboydmilan/sentinel/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/downloads/)

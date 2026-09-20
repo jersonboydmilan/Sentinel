@@ -2,8 +2,8 @@
 
 ## 1. Position
 
-AIS is a **control architecture**, not a detector bolted onto an agent
-framework. It treats agents, their relationships, their delegation chains, their
+SENTINEL is an **authority-attenuating immune architecture**, not a detector
+bolted onto an agent framework. It treats agents, their relationships, their delegation chains, their
 tool access, their authority and their behaviour as first-class security
 objects, and it places a single enforcement boundary between agent *intent* and
 agent *effect*.

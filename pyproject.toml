@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-immune-system"
 version = "0.2.0"
-description = "SENTINEL: a control architecture for behavioural, authority and operational integrity across autonomous AI-agent ecosystems"
+description = "SENTINEL: an authority-attenuating immune architecture for AI agents — detect and contain compromised agents without giving the defenders unrestricted authority"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

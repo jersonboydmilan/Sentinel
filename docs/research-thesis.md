@@ -1,5 +1,7 @@
 # Research thesis
 
+**SENTINEL — an authority-attenuating immune architecture for AI agents.**
+
 ## Problem
 
 Conventional security protects users, devices, applications, networks and
