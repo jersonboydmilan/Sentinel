@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: "Agent Immune System (SENTINEL): a control architecture for autonomous AI-agent ecosystems"
+message: "If you use this prototype or its results, please cite it."
+type: software
+authors:
+  - family-names: Milan
+    given-names: Boyd
+repository-code: "https://github.com/jersonboydmilan/sentinel"
+abstract: >-
+  A research prototype investigating whether an ecosystem of autonomous AI
+  agents can detect and contain compromised agents without transferring
+  unrestricted authority to the agents responsible for defence. Contributions:
+  behavioural agent identity, authority drift, agent immune memory, defensive
+  authority, and recursive governance, evaluated with deterministic simulations,
+  adversarial suites and an out-of-process verification split.
+keywords:
+  - AI agent security
+  - capability-based security
+  - authority drift
+  - multi-agent systems
+  - AI safety
+license: MIT
+version: 0.2.0
+date-released: "2026-09-20"

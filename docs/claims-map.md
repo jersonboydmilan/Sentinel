@@ -44,6 +44,7 @@ true, and the number that reports it.
 |---|---|---|
 | Two-party verification (detector ≠ auditor) | accusation must not equal action | false-flag experiment: fabricated flag → INCONCLUSIVE → zero containment; observation-loss sweep: flag FPR 0.50 at 25% loss while containment FPR stays 0.00 |
 | Multi-party attestation for revocation | one compromised verifier must not destroy authority | `MultiPartyAttestationTests`: single verifier → HOLD; one verifier repeating itself is still one opinion |
+| Adaptation degrades detection, not enforcement | an adversary that learns from refusals delays detection and gains no authority | `adaptive/learning-adversary`: TTD 2 → 9 steps, retries 28 → 0, prevention 1.00, real effects 0 in all three arms |
 | Cross-process verification | the verifier should *receive* the chain, not share memory with what it audits | `verification/cross-process`: 10/10 checks - agreement across processes, doctored chain and false head REJECTED, forged verdict rejected, outage fails closed |
 | Escalate, do not contain, on relationship risk | an agent that stayed inside its grant should not lose authority | collusion experiment: 0 denials per agent, chain stopped by `ESCALATE`, no containment, authority intact |
 | Graduated, reversibility-ordered response | irreversible actions need the highest evidence bar | `ACTION_CONFIDENCE_GATES`; POL-110 (two verifiers, ≥0.85) |

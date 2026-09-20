@@ -161,121 +161,327 @@ def to_dot(identity_graph, *, title: str = "agent identity graph") -> str:
     return "\n".join(lines)
 
 
-_DECISION_COLOURS = {
-    "ALLOW": "#166534",
-    "DENY": "#b91c1c",
-    "HOLD": "#b45309",
-    "ESCALATE": "#7c3aed",
-    "RESTRICT": "#b45309",
-    "QUARANTINE": "#b91c1c",
-    "REVOKE": "#7f1d1d",
+_DECISION_TONE = {
+    "ALLOW": ("allow", "#047857", "#ecfdf5", "#a7f3d0"),
+    "DENY": ("deny", "#b91c1c", "#fef2f2", "#fecaca"),
+    "HOLD": ("hold", "#b45309", "#fffbeb", "#fde68a"),
+    "ESCALATE": ("escalate", "#6d28d9", "#f5f3ff", "#ddd6fe"),
+    "RESTRICT": ("restrict", "#b45309", "#fffbeb", "#fde68a"),
+    "ISOLATE": ("isolate", "#b45309", "#fffbeb", "#fde68a"),
+    "QUARANTINE": ("quarantine", "#b91c1c", "#fef2f2", "#fecaca"),
+    "REVOKE": ("revoke", "#7f1d1d", "#fef2f2", "#fca5a5"),
+    "MONITOR": ("monitor", "#1d4ed8", "#eff6ff", "#bfdbfe"),
 }
 
 
-def _table(headers: Iterable[str], rows: Iterable[Iterable[str]]) -> str:
-    head = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
-    body = "".join(
-        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows
+def _badge(value: str) -> str:
+    tone = _DECISION_TONE.get(value, ("neutral", "#334155", "#f8fafc", "#e2e8f0"))
+    _, colour, background, border = tone
+    return (
+        f'<span class="badge" style="color:{colour};background:{background};border-color:{border}">'
+        f"{html.escape(value)}</span>"
     )
-    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
-def to_html(trace: dict, *, title: str = "SENTINEL trace") -> str:
-    """Single-file HTML report. No external assets, no JavaScript dependencies."""
-    decision_rows = []
-    for row in trace["decisions"]:
-        colour = _DECISION_COLOURS.get(row["decision"], "#334155")
-        decision_rows.append(
-            [
-                row["at"],
-                html.escape(str(row["agent"])),
-                html.escape(str(row["action"])),
-                html.escape(str(row["tool"] or "-")),
-                f'<span style="color:{colour};font-weight:600">{html.escape(str(row["decision"]))}</span>',
-                html.escape(str(row["policy"])),
-                html.escape(str(row["risk"] or "-")),
-                html.escape(", ".join(map(str, row["evidence"]))),
-            ]
-        )
+def _chips(values: list[str], limit: int = 4) -> str:
+    shown = [html.escape(str(v)) for v in values[:limit]]
+    extra = len(values) - len(shown)
+    chips = "".join(f'<span class="chip">{value}</span>' for value in shown)
+    if extra > 0:
+        chips += f'<span class="chip chip-more">+{extra}</span>'
+    return chips or '<span class="muted">—</span>'
+
+
+def _table(headers, rows, *, table_id: str = "", searchable: bool = False) -> str:
+    head = "".join(f"<th>{html.escape(str(h))}</th>" for h in headers)
+    body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
+    attributes = f' id="{table_id}"' if table_id else ""
+    search = (
+        f'<div class="toolbar"><input class="search" type="search" placeholder="Filter rows…" '
+        f'data-target="{table_id}" aria-label="Filter rows"></div>'
+        if searchable and table_id
+        else ""
+    )
+    if not rows:
+        return f'{search}<p class="empty">Nothing recorded.</p>'
+    return f'{search}<div class="table-wrap"><table{attributes}><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+
+
+#: Rows rendered in the decision table (the newest ones).
+DECISION_ROWS = 90
+
+
+def _policy(policy_id: str) -> str:
+    """Short policy id, full name on hover."""
+    parts = policy_id.split("-")
+    short = "-".join(parts[:2]) if len(parts) > 2 else policy_id
+    return f'<span class="mono" title="{html.escape(policy_id)}">{html.escape(short)}</span>'
+
+
+def _metric(label: str, value, hint: str = "") -> str:
+    hint_html = f'<span class="metric-hint">{html.escape(hint)}</span>' if hint else ""
+    return (
+        f'<div class="metric"><span class="metric-label">{html.escape(label)}</span>'
+        f'<span class="metric-value">{html.escape(str(value))}</span>{hint_html}</div>'
+    )
+
+
+STYLE = """
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --ink-faint: #94a3b8;
+  --line: #e5e7eb;
+  --line-soft: #f1f5f9;
+  --accent: #2563eb;
+  --ok: #047857;
+  --bad: #b91c1c;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.06);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 0 0 72px; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+header.top {
+  background: var(--surface); border-bottom: 1px solid var(--line);
+  padding: 28px 0 22px; margin-bottom: 28px;
+}
+.eyebrow { color: var(--ink-faint); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; }
+h1 { font-size: 26px; line-height: 1.2; margin: 6px 0 4px; letter-spacing: -0.02em; }
+.subtitle { color: var(--ink-soft); font-size: 14px; margin: 0; }
+.status-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 550;
+  padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink-soft);
+}
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.pill.bad .dot { background: var(--bad); }
+.pill.bad { color: var(--bad); border-color: #fecaca; background: #fef2f2; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 14px; margin: 0 0 28px; }
+.metric {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow);
+}
+.metric-label { font-size: 12px; color: var(--ink-faint); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.metric-value { font-size: 26px; font-weight: 640; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.metric-hint { font-size: 12.5px; color: var(--ink-soft); }
+section.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 20px 22px 8px; margin-bottom: 22px; box-shadow: var(--shadow);
+}
+section.card > h2 { font-size: 15px; margin: 0 0 2px; letter-spacing: -0.01em; }
+section.card > p.note { margin: 0 0 14px; color: var(--ink-soft); font-size: 13px; }
+.toolbar { margin: 0 0 12px; }
+.search {
+  width: 100%; max-width: 320px; padding: 8px 12px; font-size: 13.5px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 9px; background: #fff; outline: none;
+}
+.search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.table-wrap { overflow-x: auto; margin: 0 -22px; padding: 0 22px 14px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+thead th {
+  position: sticky; top: 0; background: var(--surface); z-index: 1; text-align: left;
+  font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint);
+  font-weight: 650; padding: 8px 10px; border-bottom: 1px solid var(--line);
+}
+tbody td { padding: 9px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; white-space: nowrap; }
+tbody td:last-child { white-space: normal; }
+tbody tr:hover { background: #fafbfc; }
+tbody tr:last-child td { border-bottom: none; }
+td.num, th.num { font-variant-numeric: tabular-nums; color: var(--ink-faint); width: 54px; }
+.mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 12.3px; }
+.badge {
+  display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px;
+  font-weight: 650; border: 1px solid; letter-spacing: .02em;
+}
+.chip {
+  display: inline-block; background: var(--line-soft); color: var(--ink-soft); border-radius: 6px;
+  padding: 2px 7px; margin: 0 4px 4px 0; font-size: 11.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.chip-more { background: #fff; border: 1px dashed var(--line); }
+.muted { color: var(--ink-faint); }
+.empty { color: var(--ink-faint); font-size: 13px; padding: 4px 0 18px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-soft); margin: 6px 0 16px; }
+footer { color: var(--ink-faint); font-size: 12.5px; padding-top: 6px; }
+@media (max-width: 720px) { h1 { font-size: 22px; } .wrap { padding: 0 16px; } }
+"""
+
+SCRIPT = """
+document.querySelectorAll('.search').forEach(function (input) {
+  input.addEventListener('input', function () {
+    var table = document.getElementById(input.dataset.target);
+    if (!table) return;
+    var term = input.value.toLowerCase();
+    table.querySelectorAll('tbody tr').forEach(function (row) {
+      row.style.display = row.textContent.toLowerCase().indexOf(term) === -1 ? 'none' : '';
+    });
+  });
+});
+"""
+
+
+def to_html(trace: dict, *, title: str = "SENTINEL trace", subtitle: str = "") -> str:
+    """Single-file HTML report: no external assets, no dependencies."""
+    integrity = trace["integrity"]
+    counts = trace["counts"]
+    decisions = trace["decisions"]
+
+    tally: dict[str, int] = {}
+    for row in decisions:
+        tally[row["decision"]] = tally.get(row["decision"], 0) + 1
+    allowed = tally.get("ALLOW", 0)
+    refused = sum(count for decision, count in tally.items() if decision not in {"ALLOW"})
+    drifting = sum(1 for row in trace["drift"] if row["drift"])
+
+    shown_decisions = decisions[-DECISION_ROWS:]
+    decision_rows = [
+        [
+            f'<span class="num">{row["at"]}</span>',
+            f'<span class="mono">{html.escape(str(row["agent"]))}</span>',
+            f'<span class="mono">{html.escape(str(row["action"]))}</span>',
+            f'<span class="mono muted">{html.escape(str(row["tool"] or "—"))}</span>',
+            _badge(str(row["decision"])),
+            _policy(str(row["policy"])),
+            html.escape(str(row["risk"] or "—")),
+            # Evidence is shown where it decides something: a refusal. An ALLOW
+            # lists the conditions it satisfied, which is noise at this density.
+            _chips([str(item) for item in row["evidence"] if not str(item).endswith(":pass")], limit=2)
+            if row["decision"] != "ALLOW"
+            else '<span class="muted">conditions met</span>',
+        ]
+        for row in shown_decisions
+    ]
+    truncated = len(decisions) - len(shown_decisions)
 
     drift_rows = [
         [
-            html.escape(row["agent"]),
-            "yes" if row["drift"] else "no",
-            row["score"],
-            html.escape(", ".join(row["kinds"])),
-            html.escape(", ".join(row["observed"])),
-            html.escape(", ".join(row["granted"])),
-            row["denied_ratio"],
+            f'<span class="mono">{html.escape(row["agent"])}</span>',
+            _badge("DENY" if row["drift"] else "ALLOW").replace(">DENY<", ">drift<").replace(">ALLOW<", ">clean<"),
+            f'{row["score"]:.3f}',
+            _chips([k.replace("_DRIFT", "").lower() for k in row["kinds"]], limit=4),
+            _chips(row["observed"], limit=3),
+            _chips(row["granted"], limit=3),
+            f'{row["denied_ratio"]:.3f}',
         ]
         for row in trace["drift"]
     ]
 
     containment_rows = [
         [
-            row["at"],
-            html.escape(row["subject"]),
-            html.escape(row["action"]),
-            html.escape(row["actor"]),
+            f'<span class="num">{row["at"]}</span>',
+            f'<span class="mono">{html.escape(row["subject"])}</span>',
+            _badge(row["action"]),
+            f'<span class="mono">{html.escape(row["actor"])}</span>',
             html.escape(row["reason"][:70]),
-            html.escape(str(row["verification"] or "-")),
+            f'<span class="mono">{html.escape(str(row["verification"] or "—"))}</span>',
         ]
         for row in trace["containment"]
     ]
 
     authority_rows = [
         [
-            row["at"],
-            html.escape(row["type"]),
-            html.escape(str(row["actor"])),
-            html.escape(str(row["subject"] or "-")),
-            html.escape(json.dumps(row["payload"])[:110]),
+            f'<span class="num">{row["at"]}</span>',
+            f'<span class="mono">{html.escape(row["type"])}</span>',
+            f'<span class="mono">{html.escape(str(row["actor"]))}</span>',
+            f'<span class="mono">{html.escape(str(row["subject"] or "—"))}</span>',
+            f'<span class="mono muted">{html.escape(json.dumps(row["payload"])[:96])}</span>',
         ]
         for row in trace["authority_events"]
     ]
 
     collusion_rows = [
         [
-            html.escape(row["source"]),
-            html.escape(row["partner"]),
-            row["score"],
-            html.escape(", ".join(row["evidence"])),
+            f'<span class="mono">{html.escape(row["source"])}</span>',
+            f'<span class="mono">{html.escape(row["partner"])}</span>',
+            f'{row["score"]:.2f}',
+            _chips(row["evidence"], limit=5),
         ]
         for row in trace["collusion"]
     ]
 
-    integrity = trace["integrity"]
-    banner_colour = "#166534" if integrity["audit_valid"] and integrity["policy_valid"] else "#b91c1c"
+    truncation_note = (
+        f" Showing the most recent {len(shown_decisions)} of {len(decisions)}." if truncated > 0 else ""
+    )
+    audit_ok = integrity["audit_valid"]
+    policy_ok = integrity["policy_valid"]
+    audit_pill = (
+        f'<span class="pill"><span class="dot"></span>audit chain intact · {counts["audit_records"]} records</span>'
+        if audit_ok
+        else f'<span class="pill bad"><span class="dot"></span>audit chain BROKEN at {integrity["audit_broken_at"]}</span>'
+    )
+    policy_pill = (
+        '<span class="pill"><span class="dot"></span>policy set intact</span>'
+        if policy_ok
+        else '<span class="pill bad"><span class="dot"></span>policy set MUTATED</span>'
+    )
 
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>{html.escape(title)}</title>
-<style>
- body {{ font: 14px/1.5 -apple-system, Segoe UI, Helvetica, Arial, sans-serif; margin: 2rem; color: #0f172a; }}
- h1 {{ font-size: 1.4rem; }} h2 {{ font-size: 1.05rem; margin-top: 2rem; }}
- table {{ border-collapse: collapse; width: 100%; margin-top: .5rem; font-size: 12.5px; }}
- th, td {{ border-bottom: 1px solid #e2e8f0; padding: 4px 8px; text-align: left; vertical-align: top; }}
- th {{ background: #f8fafc; font-weight: 600; }}
- .banner {{ padding: .6rem .8rem; border-radius: 6px; background: #f1f5f9; border-left: 4px solid {banner_colour}; }}
- code {{ background:#f1f5f9; padding: 0 3px; border-radius: 3px; }}
-</style></head><body>
-<h1>{html.escape(title)}</h1>
-<div class="banner">
- audit chain: <strong>{'intact' if integrity['audit_valid'] else 'BROKEN at ' + str(integrity['audit_broken_at'])}</strong>
- &middot; policy set: <strong>{'intact' if integrity['policy_valid'] else 'MUTATED'}</strong>
- &middot; records: {trace['counts']['audit_records']}
- &middot; decisions: {trace['counts']['decisions']}
- &middot; containment events: {trace['counts']['containment_events']}
- &middot; policy digest: <code>{html.escape(integrity['policy_digest'][:16])}</code>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)}</title>
+<style>{STYLE}</style></head>
+<body>
+<header class="top"><div class="wrap">
+  <div class="eyebrow">Agent Immune System · SENTINEL</div>
+  <h1>{html.escape(title)}</h1>
+  <p class="subtitle">{html.escape(subtitle or "Every consequential decision, the policy that made it, and the evidence behind it.")}</p>
+  <div class="status-row">
+    {audit_pill}
+    {policy_pill}
+    <span class="pill"><span class="dot"></span>policy digest <span class="mono">{html.escape(integrity["policy_digest"][:12])}</span></span>
+  </div>
+</div></header>
+
+<div class="wrap">
+  <div class="metrics">
+    {_metric("Decisions", counts["decisions"], f"{allowed} allowed · {refused} refused")}
+    {_metric("Agents observed", len(trace["drift"]), f"{drifting} with authority drift")}
+    {_metric("Containment", counts["containment_events"], "graduated, reversible first")}
+    {_metric("Authority events", counts["authority_events"], "grants, revocations, delegations")}
+    {_metric("Collusion chains", len(trace["collusion"]), "cross-agent relationships")}
+  </div>
+
+  <section class="card">
+    <h2>Containment</h2>
+    <p class="note">Every containment action, its actor, and the verification that unlocked it. Reversible actions first; revocation needs two independent verifiers.</p>
+    {_table(["at", "subject", "action", "actor", "reason", "verification"], containment_rows, table_id="containment")}
+  </section>
+
+  <section class="card">
+    <h2>Authority drift</h2>
+    <p class="note">Declared, granted and observed authority compared per agent. Drift is decomposed into typed components, each with its own evidence.</p>
+    {_table(["agent", "state", "score", "components", "observed", "granted", "denied ratio"], drift_rows,
+            table_id="drift", searchable=True)}
+  </section>
+
+  <section class="card">
+    <h2>Cross-agent collusion</h2>
+    <p class="note">Acquire → transfer → exfiltrate chains spanning two agents, neither of which exceeded its own authority.</p>
+    {_table(["source", "partner", "score", "evidence"], collusion_rows, table_id="collusion")}
+  </section>
+
+  <section class="card">
+    <h2>Decisions</h2>
+    <p class="note">Each row is one gateway decision. Nothing reached a tool without appearing here.{truncation_note}</p>
+    {_table(["at", "agent", "action", "tool", "decision", "policy", "risk", "evidence"], decision_rows,
+            table_id="decisions", searchable=True)}
+  </section>
+
+  <section class="card">
+    <h2>Authority timeline</h2>
+    <p class="note">Grants, revocations, restrictions, delegations, quarantine admissions and verifications.</p>
+    {_table(["at", "event", "actor", "subject", "payload"], authority_rows, table_id="authority", searchable=True)}
+  </section>
+
+  <footer>Generated by <span class="mono">python3 -m ais trace</span> · deterministic run, no external assets.</footer>
 </div>
-<h2>Decisions</h2>
-{_table(["at", "agent", "action", "tool", "decision", "policy", "risk", "evidence"], decision_rows)}
-<h2>Authority timeline</h2>
-{_table(["at", "event", "actor", "subject", "payload"], authority_rows)}
-<h2>Containment</h2>
-{_table(["at", "subject", "action", "actor", "reason", "verification"], containment_rows) if containment_rows else "<p>none</p>"}
-<h2>Authority drift</h2>
-{_table(["agent", "drift", "score", "kinds", "observed", "granted", "denied ratio"], drift_rows)}
-<h2>Cross-agent collusion</h2>
-{_table(["source", "partner", "score", "evidence"], collusion_rows) if collusion_rows else "<p>none detected</p>"}
+<script>{SCRIPT}</script>
 </body></html>
 """

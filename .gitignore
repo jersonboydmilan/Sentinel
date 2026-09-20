@@ -3,5 +3,9 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
-results.json
 *.egg-info/
+.build/
+trace.html
+trace.json
+graph.dot
+results-ci.json

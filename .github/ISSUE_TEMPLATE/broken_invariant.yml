@@ -1,0 +1,57 @@
+name: Broken invariant / falsification
+description: You have evidence that one of the architecture's claims does not hold
+labels: ["invariant", "research"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most valuable kind of issue in this repository. The claims,
+        and the test that reports each one, are listed in
+        [docs/evaluation.md §6](../blob/main/docs/evaluation.md) and
+        [docs/claims-map.md](../blob/main/docs/claims-map.md).
+  - type: dropdown
+    id: claim
+    attributes:
+      label: Which claim
+      options:
+        - P1 intelligence does not equal authority
+        - P2 authority is external (no self-grant)
+        - P3 delegation attenuates (no amplification)
+        - P4 detection does not grant containment authority
+        - P5 defensive agents are controlled agents
+        - P6 revocation overrides intent
+        - P7 default deny
+        - P8 the SDK is not the security boundary
+        - Containment requires independent verification
+        - Revocation requires two independent verifiers
+        - Immune memory alone never causes containment
+        - Quarantined agents produce no production effect
+        - Audit tampering is always detected
+        - The out-of-process verifier cannot be coerced
+        - Adaptation degrades detection but not enforcement
+        - Other / not listed
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: A failing test is ideal; a script or CLI invocation is fine.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Audit records, decision ids, metric output, or a trace report.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: analysis
+    attributes:
+      label: Why this breaks the claim
+      description: Which mechanism failed, and whether you think it is a bug or a design limit.
+    validations:
+      required: true

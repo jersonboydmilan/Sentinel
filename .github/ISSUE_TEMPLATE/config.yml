@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security advisory
+    url: https://github.com/jersonboydmilan/sentinel/security/advisories/new
+    about: Report a finding privately (see SECURITY.md for what is in scope)
+  - name: Read the research documents first
+    url: https://github.com/jersonboydmilan/sentinel/tree/main/docs
+    about: Architecture, thesis, threat model, authority and delegation models, evaluation, claims map

@@ -33,6 +33,7 @@
 | A14 | Coercive caller | controls the process that talks to the verifier and supplies a doctored or misdescribed audit chain, hoping for a confirmation |
 | A15 | Verdict forger | mints a verification result without the verifier's key, or replays a valid verdict against a different subject or request |
 | A16 | Verifier-outage attacker | disables, hangs or crashes the verifier, hoping the system degrades towards permitting containment (or towards permitting anything) |
+| A17 | Learning adversary | observes the outcome of its own requests, never retries what was refused, backs off after refusals, and falls back to pursuing its objective with capability it actually holds |
 
 ## 3. Trust boundaries
 
@@ -85,6 +86,7 @@ verification ledger can make that true.
 | coerced verification (A14) | the verifier process recomputes every record hash and compares the caller's claimed head to the computed head before reading any claim | `verification/cross-process`: `coerced_chain_rejected`, `head_mismatch_rejected`, `empty_chain_refused` |
 | forged or replayed verdict (A15) | responses are HMAC-signed with operator key material that never passes through a gateway request; the client also binds request id and nonce | `forged_verdict_rejected`, `unauthenticated_request_refused`, `test_verdict_signed_with_another_key_is_not_accepted` |
 | verifier outage (A16) | fail closed: no verdict means POL-110/111/112 stay at HOLD, and the absence is audited | `fails_closed`; `test_outage_records_unavailability_and_blocks_containment` |
+| learning adversary (A17) | **partially mitigated, and measured**: adaptation delays verified detection by 7 steps (2 → 9), but prevention stays 1.00 with zero real effects; when the adversary converges to acting inside its grant, the relationship layer and POL-060 escalation take over from containment | `adaptive/learning-adversary`; `tests/adversarial/test_learning_adversary.py` |
 
 ## 5. Explicitly out of scope
 
@@ -118,6 +120,11 @@ merely adding a test:
 3. **Observation is not enforcement.** A13 shows the two degrade independently:
    under 90% telemetry loss detection falls to 0.83 while prevention stays at
    1.00 and containment false positives stay at 0.00.
+4. **Adaptation is a detection problem, not an authority problem.** A17 is the
+   first adversary in this repository that measurably beats part of the
+   defence: it buys 7 steps of latency by not producing evidence. It buys no
+   authority at all, and its optimal convergent strategy is to stop exceeding
+   its grant - which is the outcome the architecture is designed to force.
 
 ## 6. Residual risks
 

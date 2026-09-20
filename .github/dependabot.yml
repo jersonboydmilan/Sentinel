@@ -1,0 +1,11 @@
+# The project has no runtime dependencies on purpose; only the CI actions are
+# versioned externally.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels: ["ci"]
+    commit-message:
+      prefix: "ci"

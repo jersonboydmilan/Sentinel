@@ -1,0 +1,8 @@
+# Default owner for everything in the repository.
+*                       @jersonboydmilan
+
+# The enforcement boundary: review these with extra care.
+/ais/control_plane/     @jersonboydmilan
+/ais/verifier/          @jersonboydmilan
+/policies/              @jersonboydmilan
+/tests/defender_security/ @jersonboydmilan

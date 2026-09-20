@@ -1,0 +1,46 @@
+name: Bug report
+description: Something behaves differently from what the code or docs say
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If the bug **breaks one of the architecture's
+        claims** (a defensive agent gaining authority, containment without
+        verification, a tool call with no decision behind it), please use the
+        "Broken invariant" template instead — those are treated as findings.
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      placeholder: "e.g. 0.2.0 or 8b66d38"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "python3 -V"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Ideally a failing test or a command from the README.
+      render: shell
+      placeholder: |
+        python3 -m unittest tests.integration.test_lifecycle -v
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      render: text

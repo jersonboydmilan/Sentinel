@@ -6,7 +6,8 @@
     python3 -m ais trace [--scenario NAME] [--html F] [--json F] [--dot F]
 
 Experiments: key, delegation, defender, false-positives, gradual-drift,
-collusion, false-flag, race, quarantine-escape, cross-process.
+collusion, false-flag, race, quarantine-escape, cross-process,
+learning-adversary.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ def _trace(argv: list[str]) -> int:
             "false-flag": scenarios.run_false_flag_experiment,
             "quarantine-escape": scenarios.run_quarantine_escape_suite,
             "cross-process": scenarios.run_cross_process_verification_experiment,
+            "learning-adversary": scenarios.run_learning_adversary_experiment,
         }
         if args.scenario not in runners:
             print(f"unknown scenario: {args.scenario}; choose from {sorted(runners)}", file=sys.stderr)
@@ -50,7 +52,21 @@ def _trace(argv: list[str]) -> int:
 
     trace = build_trace(ecosystem.plane, ecosystem.observatory, ecosystem.immune)
     with open(args.html, "w", encoding="utf-8") as handle:
-        handle.write(to_html(trace, title=f"SENTINEL trace - {args.scenario}"))
+        handle.write(
+            to_html(
+                trace,
+                title={
+                    "key": "Agent lifecycle trace",
+                    "collusion": "Cross-agent collusion trace",
+                    "gradual-drift": "Gradual drift trace",
+                    "false-flag": "False-flag verification trace",
+                    "quarantine-escape": "Quarantine escape trace",
+                    "population": "Ecosystem trace",
+                }.get(args.scenario, f"SENTINEL trace — {args.scenario}"),
+                subtitle=f"scenario: {args.scenario} · {trace['counts']['decisions']} decisions · "
+                f"{trace['counts']['audit_records']} audit records",
+            )
+        )
     written = [args.html]
     if args.json:
         with open(args.json, "w", encoding="utf-8") as handle:
@@ -97,12 +113,13 @@ def main(argv: list[str] | None = None) -> int:
             "race": scenarios.run_race_condition_experiment,
             "quarantine-escape": scenarios.run_quarantine_escape_suite,
             "cross-process": scenarios.run_cross_process_verification_experiment,
+            "learning-adversary": scenarios.run_learning_adversary_experiment,
         }
         if name not in runners:
             print(f"unknown experiment: {name}; choose from {sorted(runners)}", file=sys.stderr)
             return 2
         result = runners[name]()
-        printable = {k: v for k, v in result.items() if k != "ecosystem"}
+        printable = {k: v for k, v in result.items() if k not in {"ecosystem", "ecosystems"}}
         print(json.dumps(printable, indent=2, default=str))
         return 0
 

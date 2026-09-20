@@ -33,6 +33,7 @@ from ais.simulation.scenarios import (  # noqa: E402
     run_false_positive_scenario,
     run_gradual_drift_experiment,
     run_key_experiment,
+    run_learning_adversary_experiment,
     run_cross_process_verification_experiment,
     run_quarantine_escape_suite,
     run_race_condition_experiment,
@@ -191,7 +192,22 @@ def demo_adaptive(trace: bool) -> dict:
     bullet("containment applied", collusion["containment"])
     story("the chain was stopped by ESCALATE; neither agent lost authority, because neither exceeded it")
 
-    print("\n-- 2c. a compromised detector accuses an innocent agent -------------------")
+    print("\n-- 2c. an adversary that adapts to the control plane's answers -----------")
+    learning = run_learning_adversary_experiment()
+    adaptation = learning["adaptation"]
+    bullet("retries of denied capabilities", f"naive {adaptation['retries_of_denied_capabilities']['naive']} vs learner {adaptation['retries_of_denied_capabilities']['learner']}")
+    bullet("denial ratio", f"naive {adaptation['denial_ratio']['naive']} vs learner {adaptation['denial_ratio']['learner']}")
+    bullet("time to verified detection", f"naive {learning['naive']['time_to_detection_steps']} vs learner {learning['learner_defended']['time_to_detection_steps']} steps")
+    bullet("evasion gain", f"+{adaptation['evasion_gain_steps']} steps")
+    bullet("real unauthorized effects", learning["enforcement"]["learner_real_effects"] or "none, in any arm")
+    bullet("believes it succeeded", learning["enforcement"]["believed_success_vs_real"]["believes_goal_achieved"])
+    bullet("converged strategy", adaptation["converged_strategy"])
+    bullet("caught after convergence by", "relationship analysis" if adaptation["collusion_signals_after_convergence"] else "nothing")
+    story("adaptation buys detection latency, not authority: prevention stays at 1.00 in every arm")
+    story("an adversary optimising against this architecture converges to acting inside its grant,")
+    story("where the answer is escalation of the chain rather than containment of an agent")
+
+    print("\n-- 2d. a compromised detector accuses an innocent agent -------------------")
     false_flag = run_false_flag_experiment()
     bullet("fabricated flag recorded", false_flag["flag_accepted_as_record"])
     bullet("SENTINEL-AUDIT verdict", (false_flag["primary_verdict"] or {}).get("verdict"))
@@ -200,7 +216,7 @@ def demo_adaptive(trace: bool) -> dict:
     bullet("detector's own containment attempt", "DENIED" if not false_flag["detector_direct_containment_allowed"] else "ALLOWED")
     bullet("victim authority unchanged", false_flag["authority_unchanged"])
     story("a flag is an accusation; only independently reproduced evidence unlocks containment")
-    return {"gradual": gradual, "collusion": collusion, "false_flag": false_flag}
+    return {"gradual": gradual, "collusion": collusion, "false_flag": false_flag, "learning": learning}
 
 
 def demo_delegation() -> dict:
