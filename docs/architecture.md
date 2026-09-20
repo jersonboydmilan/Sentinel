@@ -35,6 +35,44 @@ alignment, not the agent's instructions, not the SDK. The gateway holds the only
 references to tool handlers (`ais/control_plane/tools.py`), so "call the tool
 directly" is not an available move for an agent.
 
+## 1a. Data flow
+
+```mermaid
+flowchart TD
+    A[Agent intent] -->|ActionRequest| G[Execution Gateway]
+    E[Emergency controls<br/>out-of-band key] -.->|state read only| G
+    G --> ID[Identity service]
+    G --> AU[Authority service]
+    G --> TC[TaskContract engine]
+    G --> FP{{Fact providers}}
+    OBS[Observatory<br/>telemetry, profiles, graphs,<br/>anomaly, drift, collusion] -->|read-only facts| FP
+    IMM[Immune system<br/>classification, memory,<br/>verification ledger] -->|read-only facts| FP
+    FP --> RISK[Risk engine]
+    RISK --> POL[Policy engine<br/>default deny]
+    POL -->|ALLOW| EX[Tool registry<br/>production or quarantine sandbox]
+    POL -->|DENY / HOLD / ESCALATE / RESTRICT| X[No execution]
+    EX --> AUD[(Hash-chained audit)]
+    X --> AUD
+    AUD --> OBS
+    AUD --> IMM
+    AUD --> INV[Invariant checker P1-P8]
+    OBS --> SD[SENTINEL-DETECT<br/>observe, flag]
+    SD -->|flag| SA[SENTINEL-AUDIT + AUDIT-2<br/>re-derive evidence from audit]
+    SA -->|CONFIRMED verification| SC[SENTINEL-CONTAIN<br/>restrict, isolate, quarantine, revoke]
+    SC -->|ActionRequest| G
+    SC --> QR[Quarantine sandbox]
+    QR --> SF[SENTINEL-FORENSICS<br/>deterministic replay]
+    SF -->|signature| IMM
+    SR[SENTINEL-RECOVERY<br/>restore] -->|ActionRequest + external authorization| G
+```
+
+Two things to read off this diagram:
+
+* the observatory and the immune system reach the decision path **only** as fact
+  providers - arrows in, no arrows out to execution;
+* every defensive agent's arrow to the gateway is the same arrow an ordinary
+  agent uses. There is no privileged edge.
+
 ## 2. The analysis pipeline
 
 ```text
@@ -189,7 +227,69 @@ Mutation, reordering and truncation are all detectable
 searchable by actor, subject, task and type, and `replay()` yields decision
 bodies for forensic reconstruction.
 
-## 10. Emergency controls
+## 10. Cross-agent analysis
+
+Single-agent profiling cannot see a threat that has been split across two
+agents. `observatory/collusion.py` looks for ordered
+**acquire → transfer → exfiltrate** chains spanning a pair, within a window,
+and weights them by *capability complementarity*: neither agent could perform
+the whole chain with its own authority.
+
+The response is deliberately not containment. Neither agent exceeded its grant,
+so `POL-060-COLLUSION-ESCALATION` returns `ESCALATE` for the implicated steps:
+the chain stops and a human is asked, while both agents keep their authority.
+SENTINEL-AUDIT re-derives the same chain from the audit chain
+(`reconstruct_collusion`), so the finding is corroborable, and a
+HOLD/ESCALATE decision is explicitly *not* counted as an agent violation -
+otherwise escalation would manufacture its own evidence.
+
+## 11. Multi-party attestation
+
+Revocation - the only irreversible action - requires **two independent
+verifiers** (`POL-110`, fact `verification_count >= 2`). SENTINEL-AUDIT and
+SENTINEL-AUDIT-2 are separate principals with separate credentials running the
+same reconstruction independently. `independent_verifiers()` counts distinct
+principals, so one auditor repeating itself remains one opinion. Compromising a
+single verifier therefore buys a HOLD, not an irreversible action.
+
+## 12. Context-bound authority
+
+A grant may carry `scope={"task_id": ...}`. Such a grant is usable only inside
+that task contract; `AuthorityService.granted/effective/has` take the request's
+task id, and a context-bound grant is excluded when no task is supplied. This
+narrows the blast radius of a long-lived grant to the work it was issued for.
+
+## 13. Runtime invariant checking
+
+`control_plane/invariants.py` re-checks P1-P8 as **state predicates** after
+every gateway decision:
+
+| Invariant | Predicate |
+|---|---|
+| P1 | production tool invocations ≤ production-routed ALLOW decisions |
+| P2 | no grant where `granted_by == subject` |
+| P3 | every derived grant is covered by its parent, with lower depth and no longer expiry |
+| P4 | no defensive principal holds an operational capability |
+| P5 | every containment event traces to an allowing gateway decision (or root) |
+| P6 | no revoked grant is still effective |
+| P7 | no ALLOW rests on `capability_not_held` outside the sandbox; the default-deny policy never allows |
+| P8 | production tool calls equal production-routed ALLOW decisions |
+
+Violations are audited (`invariant.violation`) and, with `strict=True`, raised.
+This is what turns each principle from a property of one code path into a
+continuously monitored property of the whole system - and it is what detects an
+in-process bypass of the gateway, which no policy can prevent.
+
+## 14. Trace and review tooling
+
+`observatory/trace.py` renders a run three ways: a JSON timeline, Graphviz DOT
+of the identity/delegation graph, and a single self-contained HTML report with
+the decision timeline, authority events, containment, drift per agent and
+collusion chains. `ActionResult.narrative()` renders one decision as a sentence
+("X was DENY for credential.read because it does not hold that capability
+(policy POL-002)"). `python3 -m ais trace --scenario key --html trace.html`.
+
+## 15. Emergency controls
 
 `GLOBAL_STOP`, `AGENT_REVOKE`, `CAPABILITY_REVOKE`, `DELEGATION_FREEZE`,
 `NETWORK_ISOLATE`, `QUARANTINE_ALL` are **not capabilities**. There is no grant

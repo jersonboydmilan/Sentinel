@@ -46,6 +46,25 @@ policies:
     effect: ALLOW
     otherwise: RESTRICT
 
+  - id: POL-060-COLLUSION-ESCALATION
+    # Relationship-level risk. Neither agent exceeded its own authority, so the
+    # answer is to stop the *chain* and escalate to a human, not to contain
+    # either agent. Authority is untouched; only the implicated step is held.
+    description: Hold acquire/transfer/exfiltrate steps while a collusion chain is open.
+    priority: 82
+    match:
+      action: "*"
+    when:
+      - fact: collusion_score
+        gte: 0.8
+      - fact: capability_in_collusion_chain
+        equals: true
+    conditions:
+      - fact: collusion_score
+        lt: 0.8
+    effect: ALLOW
+    otherwise: ESCALATE
+
   - id: POL-020-DELEGATION
     description: Delegation must stay inside the delegator's delegable authority (P3).
     priority: 80

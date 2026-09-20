@@ -79,6 +79,54 @@ class ActionResult:
     facts: dict = field(default_factory=dict)
     latency_ms: float = 0.0
 
+    def narrative(self) -> str:
+        """One sentence explaining the decision in reviewer-readable terms."""
+        request = self.request
+        target = f" on {request.tool}" if request.tool else ""
+        if self.effect is Effect.ALLOW and self.error is None:
+            basis = (
+                "quarantine sandbox: synthetic tools, no production effect"
+                if self.facts.get("sandboxed")
+                else "held authority and in-scope contract"
+            )
+            return (
+                f"{request.principal_id} was ALLOWED to {request.action}{target} "
+                f"({basis}; policy {self.policy_id}; risk {self.risk.level.value if self.risk else 'n/a'})"
+            )
+        reason = self._primary_reason()
+        return (
+            f"{request.principal_id} was {self.effect.value} for {request.action}{target} "
+            f"because {reason} (policy {self.policy_id})"
+        )
+
+    def _primary_reason(self) -> str:
+        explanations = {
+            "capability_not_held": "it does not hold that capability",
+            "capability_outside_declared_purpose": "the action is outside its task contract",
+            "tool_outside_contract": "the tool is not in its task contract",
+            "endpoint_outside_contract": "the endpoint is not in its task contract",
+            "data_outside_contract": "the dataset is not in its task contract",
+            "tool_call_budget_exhausted": "its task budget is exhausted",
+            "delegation_within_authority:equals:fail": "the delegation would amplify authority",
+            "verification_valid:equals:fail": "no independent verification supports the action",
+            "verification_count:gte:fail": "a second independent verifier is required",
+            "collusion_score:lt:fail": "a cross-agent collusion chain is open and awaiting review",
+            "namespace_not_agent_reachable": "the namespace is operated out of band",
+            "auth:IMPERSONATION_DETECTED": "the credential belongs to another principal",
+            "forbidden_capability": "the capability is not representable in this architecture",
+            "no_policy_matched": "no policy permits it (default deny)",
+        }
+        for reason in self.reasons:
+            if reason in explanations:
+                return explanations[reason]
+            if reason.startswith("emergency:"):
+                return f"an emergency control is active ({reason.split(':', 1)[1]})"
+            if reason.startswith("control_plane:"):
+                return f"the control plane refused it ({reason.split(':', 1)[1]})"
+        if self.error:
+            return f"execution was refused ({self.error[:80]})"
+        return "the policy conditions were not satisfied"
+
     def as_record(self) -> dict:
         return {
             "decision_id": self.decision_id,
@@ -191,11 +239,20 @@ class ExecutionGateway:
             facts["capability_is_defensive"] = capability.is_defensive()
 
             # 6. authority (default deny)
-            held = self.authority.has(request.principal_id, capability)
+            # Context binding: a grant scoped to a task contract is usable only
+            # inside that contract, so the request's task id is part of the
+            # authority question, not merely of the contract question.
+            held = self.authority.has(request.principal_id, capability, task_id=request.task_id)
             facts["capability_held"] = held
-            facts["authority_explain"] = self.authority.explain(request.principal_id, str(capability))
-            facts["granted_capabilities"] = self.authority.granted(request.principal_id).as_strings()
-            facts["effective_capabilities"] = self.authority.effective(request.principal_id).as_strings()
+            facts["authority_explain"] = self.authority.explain(
+                request.principal_id, str(capability), task_id=request.task_id
+            )
+            facts["granted_capabilities"] = self.authority.granted(
+                request.principal_id, task_id=request.task_id
+            ).as_strings()
+            facts["effective_capabilities"] = self.authority.effective(
+                request.principal_id, task_id=request.task_id
+            ).as_strings()
             if not held:
                 reasons.append("capability_not_held")
 

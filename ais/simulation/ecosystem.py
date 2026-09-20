@@ -32,6 +32,10 @@ class EcosystemConfig:
     emergency_key: str = "out-of-band-operator-key"
     memory_path: str | None = None
     policy_dir: str | None = None
+    #: Fraction of gateway decisions the observatory never sees (partial
+    #: observability). Enforcement is unaffected; only detection degrades.
+    observation_loss: float = 0.0
+    observation_seed: str = "observatory"
 
 
 class Ecosystem:
@@ -41,7 +45,11 @@ class Ecosystem:
         if self.config.policy_dir:
             plane_config.policy_dir = self.config.policy_dir
         self.plane = ControlPlane(plane_config)
-        self.observatory = Observatory(self.plane)
+        self.observatory = Observatory(
+            self.plane,
+            observation_loss=self.config.observation_loss,
+            seed=self.config.observation_seed,
+        )
         self.immune = ImmuneSystem(self.plane, self.observatory, memory_path=self.config.memory_path)
         self.sentinel = Sentinel(self.plane, self.observatory, self.immune)
         self.metrics = MetricsCollector()
@@ -241,6 +249,28 @@ def default_population() -> list[ScriptedAgent]:
     from .agents import POPULATION
 
     return [cls() for cls in POPULATION]
+
+
+def clone_agent(cls, suffix: str) -> ScriptedAgent:
+    """Instantiate a scripted agent under a suffixed name, for scale sweeps."""
+    from dataclasses import replace
+
+    agent = cls()
+    agent.spec = replace(agent.spec, name=f"{agent.spec.name}#{suffix}")
+    agent.name = agent.spec.name
+    agent.SPEC = agent.spec
+    return agent
+
+
+def build_scaled_ecosystem(copies: int = 1, config: EcosystemConfig | None = None) -> Ecosystem:
+    """The standard population replicated ``copies`` times (agent-count sweep)."""
+    from .agents import POPULATION
+
+    ecosystem = Ecosystem(config)
+    for index in range(copies):
+        for cls in POPULATION:
+            ecosystem.add_agent(cls() if copies == 1 and index == 0 else clone_agent(cls, str(index + 1)))
+    return ecosystem
 
 
 def build_default_ecosystem(config: EcosystemConfig | None = None) -> Ecosystem:

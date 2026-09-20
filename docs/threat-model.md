@@ -25,6 +25,11 @@
 | A6 | Impersonator | presents another principal's identifier |
 | A7 | Compromised defensive agent | holds defensive capability and tries to exceed it (section 17) |
 | A8 | Malicious insider tool | returns attacker-controlled output designed to steer an agent |
+| A9 | Patient agent (slow drift) | stays mostly in scope, probes rarely, widens gradually over dozens of steps |
+| A10 | Colluding pair | two agents, each fully within its own authority, whose *combination* completes an acquire → transfer → exfiltrate chain |
+| A11 | Compromised detector | holds `agent.observe`/`agent.flag` and fabricates evidence against an innocent agent |
+| A12 | Race-condition agent | submits continuously, hoping a revocation, restriction or expiry leaves a grace window |
+| A13 | Partial-observability attacker | operates where telemetry is lossy, so the observatory sees only part of its behaviour |
 
 ## 3. Trust boundaries
 
@@ -66,6 +71,14 @@ verification ledger can make that true.
 | quarantine escape | registry swap at the gateway, synthetic tools, recording | adversarial 19 |
 | audit tampering | hash chain verification detects mutation, reorder, truncation | adversarial 20 |
 | kill-switch suppression | emergency controls are out-of-band, namespace unreachable | adversarial 20b |
+| slow drift (A9) | typed drift components accumulate; escalation drift requires breadth; detection latency measured, not assumed | `adaptive/gradual-drift` (6-step latency, benign agent untouched) |
+| split-capability collusion (A10) | relationship analysis over the behaviour graph with capability complementarity; response is ESCALATE, not containment | `adaptive/collusion`; `CollusionTests` |
+| fabricated accusation (A11) | a flag is not an action: containment policies require a subject-bound CONFIRMED verification re-derived from the audit chain | `adaptive/false-flag-detector`; `FalseFlagTests` |
+| single compromised verifier | revocation requires two *distinct* verifiers (POL-110) | `MultiPartyAttestationTests` |
+| decision-time races (A12) | authority is evaluated per request; restrictions, expiry and revocation take effect on the next submission | `adversarial/decision-time-authority` (`no_grace_window`) |
+| partial observability (A13) | enforcement depends on authority, not observation; verification absorbs observation noise | `sweep/observation-loss`: prevention 1.00 and containment FPR 0.00 at every loss level |
+| gateway bypass (in-process) | not prevented; detected by invariants P1/P8 comparing tool calls to production-routed ALLOWs | `test_gateway_bypass_is_detected`; quarantine suite row 3 |
+| over-long authority lifetime | context-bound grants (`scope.task_id`) are usable only inside the issuing contract | `ContextBoundGrantTests` |
 
 ## 5. Explicitly out of scope
 
@@ -83,6 +96,23 @@ verification ledger can make that true.
 * **Denial of service.** An agent that floods the gateway is contained by rate
   and budget rules in the contract, but resource exhaustion is not modelled.
 
+## 5a. Newly modelled, newly bounded
+
+Three of the additions above change what the architecture claims rather than
+merely adding a test:
+
+1. **Relationship threats need a different response class.** Containment is the
+   wrong answer when no agent exceeded its authority; `ESCALATE` stops the chain
+   and leaves authority intact. This is why HOLD/ESCALATE decisions are excluded
+   from the "policy violation" count - otherwise escalation would generate the
+   evidence used to justify containment.
+2. **The detector is an attack surface, and is treated as one.** A11 is modelled
+   explicitly with a detector that fabricates evidence; the answer is structural
+   (two-party verification), not a confidence threshold.
+3. **Observation is not enforcement.** A13 shows the two degrade independently:
+   under 90% telemetry loss detection falls to 0.83 while prevention stays at
+   1.00 and containment false positives stay at 0.00.
+
 ## 6. Residual risks
 
 1. **Detection is not the guarantee; containment is.** A sufficiently patient
@@ -98,3 +128,13 @@ verification ledger can make that true.
    The integrity digest protects against mutation, not against bad authorship.
 4. **Ground-truth labels in the simulation are ours.** The measured detection
    rate describes scripted adversaries, and scripted adversaries do not adapt.
+5. **Two compromised verifiers defeat multi-party attestation.** The design
+   assumes at most one compromised auditor; a colluding pair of verifiers is an
+   open experiment (see `evaluation.md` §6).
+6. **Collusion detection is pattern-specific.** The analyser finds ordered
+   two-party chains inside a window. A three-party chain, or one slower than the
+   window, evades it. The response design (escalate rather than contain)
+   transfers; the detector does not.
+7. **The invariant checker shares the process it monitors.** It detects a
+   gateway bypass, but an attacker who can execute code in the control plane can
+   also disable the checker. It is a monitoring aid, not a trust anchor.

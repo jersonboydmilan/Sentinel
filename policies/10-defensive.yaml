@@ -37,7 +37,10 @@ policies:
     otherwise: DENY
 
   - id: POL-110-IRREVERSIBLE-CONTAINMENT
-    description: Revocation and quarantine need independent verification and high confidence.
+    # Multi-party attestation: the one irreversible action in the system needs
+    # two *independent* verifiers, so a single compromised auditor cannot
+    # authorise destruction of authority.
+    description: Revocation needs two independent verifiers and high confidence.
     priority: 94
     match:
       action: "agent.revoke"
@@ -50,6 +53,8 @@ policies:
         equals: true
       - fact: verification_confidence
         gte: 0.85
+      - fact: verification_count
+        gte: 2
     effect: ALLOW
     otherwise: HOLD
 

@@ -115,6 +115,17 @@ class VerificationLedger:
     def for_subject(self, subject_id: str) -> list[Verification]:
         return [v for v in self._records.values() if v.subject_id == subject_id]
 
+    def confirmed_for(self, subject_id: str) -> list[Verification]:
+        return [v for v in self.for_subject(subject_id) if v.valid]
+
+    def independent_verifiers(self, subject_id: str) -> list[str]:
+        """Distinct principals that independently confirmed a finding.
+
+        Multi-party attestation counts *verifiers*, not verifications: one
+        auditor repeating itself is one opinion.
+        """
+        return sorted({v.verifier_id for v in self.confirmed_for(subject_id)})
+
     def all(self) -> list[Verification]:
         return sorted(self._records.values(), key=lambda v: v.verification_id)
 

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from ..control_plane.plane import ControlPlane
 from ..immune_system.immune import ImmuneSystem
 from ..observatory.observatory import Observatory
-from .auditor import SentinelAudit
+from .auditor import SentinelAudit, SentinelAuditSecondary
 from .containment import ContainmentOutcome, SentinelContain
 from .detector import Flag, SentinelDetect
 from .forensics import ForensicReport, SentinelForensics
@@ -50,6 +50,7 @@ class Sentinel:
         self.immune = immune
         self.detect = SentinelDetect(plane, observatory, immune)
         self.audit = SentinelAudit(plane, observatory, immune)
+        self.audit_secondary = SentinelAuditSecondary(plane, observatory, immune)
         self.contain = SentinelContain(plane, observatory, immune)
         self.forensics = SentinelForensics(plane, observatory, immune)
         self.recovery = SentinelRecovery(plane, observatory, immune)
@@ -58,7 +59,7 @@ class Sentinel:
 
     @property
     def agents(self) -> list:
-        return [self.detect, self.audit, self.contain, self.forensics, self.recovery]
+        return [self.detect, self.audit, self.audit_secondary, self.contain, self.forensics, self.recovery]
 
     def agent_ids(self) -> list[str]:
         return [agent.agent_id for agent in self.agents]
@@ -72,6 +73,11 @@ class Sentinel:
 
         for flag in flags:
             verification = self.audit.verify(flag)
+            # Second opinion, produced independently from the same audit chain.
+            # It is recorded whatever it says; POL-110 counts distinct verifiers.
+            secondary = self.audit_secondary.verify(flag)
+            if secondary is not None:
+                verifications.append(secondary.as_dict())
             if verification is None:
                 rejected.append(f"{flag.agent_id}:verification_unavailable")
                 continue

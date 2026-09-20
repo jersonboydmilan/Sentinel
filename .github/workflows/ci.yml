@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Unit, integration, adversarial, delegation, defender and property tests
+        run: python -m unittest discover -s tests -t . -v
+
+  invariants-and-experiments:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The mandatory section 17 experiment is a build gate, not a report.
+      - name: Defender escape experiment must find no escape
+        run: |
+          python - <<'PY'
+          from ais.simulation.scenarios import run_defender_escape_experiment
+          result = run_defender_escape_experiment()
+          failed = [name for name, blocked in result["summary"].items() if not blocked]
+          print("escape paths:", result["summary"])
+          assert not failed, f"SENTINEL escaped via: {failed}"
+          assert result["all_blocked"]
+          PY
+
+      - name: Quarantine escape suite must find no escape
+        run: |
+          python - <<'PY'
+          from ais.simulation.scenarios import run_quarantine_escape_suite
+          result = run_quarantine_escape_suite()
+          failed = [name for name, blocked in result["summary"].items() if not blocked]
+          print("containment bypasses:", result["summary"])
+          assert not failed, f"containment bypassed via: {failed}"
+          assert result["production_invocations_after_quarantine"] <= 1  # only the deliberate in-process probe
+          PY
+
+      - name: Benchmark hard checks (reproducibility, invariants, enforcement gates)
+        run: |
+          python -m ais benchmark --out results-ci.json
+          python - <<'PY'
+          import json
+          payload = json.load(open("results-ci.json"))
+          print(json.dumps(payload["hard_checks"], indent=2))
+          assert payload["pass"], "a benchmark hard check failed"
+          PY
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: results-ci.json

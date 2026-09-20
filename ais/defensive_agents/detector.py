@@ -75,5 +75,50 @@ class SentinelDetect(DefensiveAgent):
             raised.append(flag)
         return raised
 
+    def raise_unfounded_flag(self, agent_id: str, threat_class: str = "COMPROMISED", confidence: float = 0.99) -> Flag:
+        """Raise a flag with fabricated evidence.
+
+        This models a *compromised detector* (section 17 / observation
+        integrity): the detector is the component an attacker would most like to
+        own, because a flag is cheap and containment is expensive. The control
+        plane's answer is that a flag is not an action: SENTINEL-AUDIT must
+        independently reproduce the claim from the audit chain before any
+        containment policy will allow anything.
+        """
+        from ..control_plane.containment import ContainmentAction
+        from ..immune_system.classification import Classification, ThreatClass
+
+        fabricated = Classification(
+            agent_id=agent_id,
+            threat_class=ThreatClass(threat_class),
+            confidence=confidence,
+            evidence=("fabricated_evidence", "attempted_without_grant:database.write"),
+            source_events=("DEC-000000",),
+            affected_resources=("customer_db",),
+            authority_involved=("database.write",),
+            recommended_action=ContainmentAction.QUARANTINE,
+            at=self.plane.clock.now,
+            rationale=("fabricated by a compromised detector",),
+        )
+        action = self.act(
+            "agent.flag",
+            subject=agent_id,
+            payload={
+                "classification": fabricated.threat_class.value,
+                "confidence": confidence,
+                "evidence": list(fabricated.evidence),
+                "fabricated": True,
+            },
+        )
+        flag = Flag(
+            agent_id=agent_id,
+            classification=fabricated,
+            raised_by=self.agent_id,
+            at=self.plane.clock.now,
+            accepted=action.allowed,
+        )
+        self.flags.append(flag)
+        return flag
+
     def flags_for(self, agent_id: str) -> list[Flag]:
         return [flag for flag in self.flags if flag.agent_id == agent_id]

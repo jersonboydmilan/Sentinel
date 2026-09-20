@@ -43,6 +43,31 @@ Yes, if three separations are made structural rather than procedural:
    and cycle constraints, and the same constraint applies to the declared purpose
    via attenuated sub-contracts (Principle 3).
 
+## One page: invariant → question → metric
+
+Each architectural invariant answers a specific part of the research question
+and is reported by a specific number. Full code/test mapping:
+[claims-map.md](claims-map.md).
+
+| Invariant | Part of the question it answers | Reported by |
+|---|---|---|
+| P1 intelligence ≠ authority | can an agent's *conclusion* become an effect? | prevention rate 18/18; P1 invariant clean over 368 checks |
+| P2 authority is external | can any agent widen itself? | `SelfGrantDenied` on every self-grant; defender escapes 0/11 |
+| P3 delegation attenuates | can authority grow by being passed around? | amplification blocked 33/33; chain properties `P3-*` |
+| P4 detection ≠ offensive authority | does noticing a threat license acting on it? | detector cannot contain (4 denials per attempt); defensive violations 0 |
+| P5 defenders are controlled agents | *the* question - is defence itself bounded? | section 17: 12/12 escape paths denied |
+| P6 revocation overrides intent | can authority outlive its withdrawal? | `no_grace_window: true` at restriction, expiry and revocation |
+| P7 default deny | is anything implicitly permitted? | `POL-000-DEFAULT-DENY`; property `P7` |
+| P8 SDK is not the boundary | does convenience tooling become the control? | direct engine call blocked; in-process bypass detected by P1/P8 |
+
+Two further claims are not invariants but design positions, each with its own
+number:
+
+| Position | Number |
+|---|---|
+| accusation must not equal action (two-party verification) | fabricated flag → 0 containment; flag FPR 0.50 at 25% observation loss while containment FPR stays 0.00 |
+| relationship risk is answered by escalation, not containment | collusion experiment: 0 denials per agent, chain stopped, authority intact |
+
 ## Five proposed concepts
 
 ### A. Behavioural agent identity
@@ -118,19 +143,42 @@ This is the claim the project is least willing to assert rhetorically, so it is
 tested adversarially: `tests/defender_security/` plus the mandatory section 17
 experiment, twelve escape paths, all denied.
 
+Recursive governance is also *monitored*, not merely designed: an invariant
+checker re-evaluates P1-P8 as predicates over live control-plane state after
+every decision, and a containment event that cannot be traced back to an
+allowing gateway decision is itself a violation. Two further mechanisms harden
+the defensive side specifically:
+
+* **multi-party attestation** - revocation requires two distinct confirming
+  verifiers, so one compromised auditor yields a HOLD rather than destruction of
+  authority;
+* **an explicitly modelled compromised detector** - the false-flag experiment
+  gives an attacker the detector and shows that a flag without reproducible
+  evidence produces nothing at all.
+
 ## Falsifiability
 
-The thesis is falsified by any of the following, each of which has a test that
-would fail loudly:
+Thirteen falsifying observations, each with the test that would report it, are
+listed in [evaluation.md §6](evaluation.md). In summary, the thesis fails if any
+of these is ever observed:
 
-* a defensive agent obtaining authority it was not externally granted;
-* a containment action executing without an independent, subject-bound
-  verification;
-* delegation producing authority not held by the delegator;
-* an agent executing a tool call that received no gateway decision;
-* immune memory alone causing containment;
-* an audit mutation that verification does not detect;
-* a benchmark run whose audit head hash differs between identical runs.
+* a defensive agent obtains authority it was not externally granted;
+* containment executes without a subject-bound, independently reproduced
+  verification, or revocation executes on a single verifier;
+* delegation produces authority the delegator never held;
+* a tool call executes with no gateway decision behind it;
+* immune memory alone, or a fabricated flag, causes containment;
+* authority survives revocation for even one further decision;
+* a quarantined agent produces a production effect;
+* a benign agent reaches containment;
+* an audit mutation goes undetected, or two identical runs disagree on the audit
+  head hash.
+
+Four experiments that *could* falsify the thesis are **not yet implemented** and
+are stated as open: a learning adversary; two colluding verifiers; a
+cross-process deployment where the two-party property is physical rather than
+logical; and compromise of the human root or emergency-key holder, who are
+trusted by construction.
 
 ## Relation to prior framings
 
