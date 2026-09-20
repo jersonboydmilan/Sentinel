@@ -1,0 +1,41 @@
+name: Experiment proposal
+description: Propose an adversary, scenario or measurement
+labels: ["experiment", "research"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Open experiments are listed at the end of
+        [docs/evaluation.md §6](../blob/main/docs/evaluation.md) — a stronger
+        learning adversary, two colluding verifiers, cross-host verification,
+        operator compromise. Proposals outside that list are welcome too.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question the experiment answers
+      placeholder: "Can an adversary that observes peer containment outcomes infer the defensive cycle period?"
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Design
+      description: Agents, arms, steps, what is held constant, what is varied.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What result would change the project's claims
+      description: State the falsifying outcome up front.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This is defensive research; it does not require building offensive tooling
+          required: true
+        - label: It can run deterministically, with no third-party dependencies
+          required: false

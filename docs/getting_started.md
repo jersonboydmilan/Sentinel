@@ -99,7 +99,7 @@ Check your work:
 
 ```bash
 python3 -c "from ais.control_plane.plane import ControlPlane; cp=ControlPlane(); print(len(cp.policy.policies), cp.policy.digest[:12])"
-python3 -m unittest discover -s tests -t .
+python3 -m unittest discover -s tests -t .      # 180 tests
 ```
 
 ## 5. Write an adversarial scenario

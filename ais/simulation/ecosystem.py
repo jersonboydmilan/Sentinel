@@ -132,6 +132,8 @@ class Ecosystem:
         )
         self.metrics.decisions += 1
         self.metrics.policy_latencies.append(result.latency_ms)
+        # An agent learns the outcome of its own request - nothing privileged.
+        self.agents[agent_name].observe_result(intent, result)
         if not holds_authority and not contained and not result.allowed:
             self.metrics.unauthorized_prevented += 1
         if intent.action == "agent.delegate" and result.allowed and intent.target_agent in self.agents:

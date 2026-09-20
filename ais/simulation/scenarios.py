@@ -988,3 +988,156 @@ def _in_process_verification_ms(plane, subject_id: str) -> float:
     started = time.perf_counter()
     reconstruction.verdict_for(records, subject_id, "COMPROMISED", 1.0)
     return (time.perf_counter() - started) * 1000.0
+
+
+# ---------------------------------------------------------------------------
+# Learning adversary
+# ---------------------------------------------------------------------------
+TARGET_CAPABILITIES = {"credential.read", "network.egress", "database.write", "file.write"}
+
+
+def _real_effects(ecosystem, agent_id: str) -> list[dict]:
+    """Decisions that actually reached the production tool surface.
+
+    A sandboxed ALLOW is not an effect: the quarantine registry answers with
+    synthetic data, so an adversary can *believe* it succeeded. Ground truth is
+    computed here, never inside an agent.
+    """
+    out = []
+    for event in ecosystem.observatory.telemetry.events(agent_id):
+        if not event.allowed or event.capability not in TARGET_CAPABILITIES:
+            continue
+        if event.policy_id == "POL-001-QUARANTINE-CONFINEMENT":
+            continue
+        out.append({"at": event.at, "capability": event.capability, "policy": event.policy_id})
+    return out
+
+
+def _adversary_profile(ecosystem, agent_id: str) -> dict:
+    outcome = ecosystem.metrics.outcome(agent_id)
+    events = ecosystem.observatory.telemetry.events(agent_id)
+    drift = ecosystem.observatory.drift_report(agent_id)
+    return {
+        "decisions": len(events),
+        "denials": sum(1 for e in events if e.decision == "DENY"),
+        "denied_ratio": round(ecosystem.observatory.profile(agent_id).denied_ratio, 4),
+        "first_violation_step": outcome.first_violation_step,
+        "first_flag_step": outcome.first_flag_step,
+        "first_verified_flag_step": outcome.first_verified_flag_step,
+        "time_to_detection_steps": outcome.time_to_detection,
+        "drift_score": round(drift.score, 4),
+        "drift_kinds": list(drift.kinds()),
+        "containment": [event.action.value for event in ecosystem.plane.containment.history(agent_id)],
+        "real_production_effects": _real_effects(ecosystem, agent_id),
+    }
+
+
+def run_learning_adversary_experiment(
+    steps: int = 40,
+    *,
+    sentinel_interval: int = 4,
+    undefended_steps: int = 90,
+) -> dict:
+    """An adversary that adapts to the control plane's answers.
+
+    Three arms, identical configuration otherwise:
+
+    A. **naive** - the scripted COMPROMISED-01, which repeats refused actions;
+    B. **learner, defended** - backs off after each refusal and stops retrying
+       what was denied;
+    C. **learner, undefended** - the same adversary with the defensive cycle
+       effectively disabled and a longer horizon, so it can run its strategy to
+       completion and show what it converges to.
+
+    The comparison to make is not "did we catch it" but "what did adaptation
+    buy, and what did it cost the adversary".
+    """
+    from ..control_plane.invariants import InvariantChecker
+    from .agents import Compromised01, CourierEgress01, LearningAdversary01, Normal01
+
+    # --- arm A: naive adversary -------------------------------------------
+    naive = Ecosystem(EcosystemConfig(sentinel_interval=sentinel_interval))
+    naive.add_agent(Normal01())
+    naive.add_agent(Compromised01())
+    naive_checker = InvariantChecker(naive.plane).bind()
+    naive.run(steps)
+
+    # --- arm B: learning adversary, defended ------------------------------
+    defended = Ecosystem(EcosystemConfig(sentinel_interval=sentinel_interval))
+    defended.add_agent(Normal01())
+    learner_defended = defended.add_agent(LearningAdversary01())
+    defended.add_agent(CourierEgress01())
+    defended_checker = InvariantChecker(defended.plane).bind()
+    defended.run(steps)
+
+    # --- arm C: learning adversary, defensive cycle disabled --------------
+    undefended = Ecosystem(EcosystemConfig(sentinel_interval=10_000))
+    undefended.add_agent(Normal01())
+    learner_free = undefended.add_agent(LearningAdversary01())
+    undefended.add_agent(CourierEgress01())
+    undefended_checker = InvariantChecker(undefended.plane).bind()
+    undefended.run(undefended_steps)
+
+    naive_profile = _adversary_profile(naive, "COMPROMISED-01")
+    defended_profile = _adversary_profile(defended, "LEARNER-01")
+    free_profile = _adversary_profile(undefended, "LEARNER-01")
+
+    def _detection_delay(profile: dict) -> int | None:
+        return profile["time_to_detection_steps"]
+
+    evasion_gain = None
+    if _detection_delay(naive_profile) is not None and _detection_delay(defended_profile) is not None:
+        evasion_gain = _detection_delay(defended_profile) - _detection_delay(naive_profile)
+
+    collusion = [signal.as_dict() for signal in undefended.observatory.collusion_signals("LEARNER-01")]
+
+    return {
+        "ecosystems": {"naive": naive, "defended": defended, "undefended": undefended},
+        "naive": naive_profile,
+        "learner_defended": {**defended_profile, "agent_state": learner_defended.state()},
+        "learner_undefended": {**free_profile, "agent_state": learner_free.state()},
+        "adaptation": {
+            "retries_of_denied_capabilities": {
+                "naive": _retries_of_denied(naive, "COMPROMISED-01"),
+                "learner": _retries_of_denied(defended, "LEARNER-01"),
+            },
+            "evasion_gain_steps": evasion_gain,
+            "denial_ratio": {
+                "naive": naive_profile["denied_ratio"],
+                "learner": defended_profile["denied_ratio"],
+            },
+            "converged_strategy": learner_free.strategy,
+            "collusion_signals_after_convergence": collusion,
+        },
+        "enforcement": {
+            "naive_real_effects": naive_profile["real_production_effects"],
+            "learner_real_effects": defended_profile["real_production_effects"],
+            "learner_real_effects_undefended": free_profile["real_production_effects"],
+            "prevention_rate": {
+                "naive": naive.metrics.report()["governance"]["unauthorized_prevention_rate"],
+                "defended": defended.metrics.report()["governance"]["unauthorized_prevention_rate"],
+                "undefended": undefended.metrics.report()["governance"]["unauthorized_prevention_rate"],
+            },
+            "invariants_ok": {
+                "naive": naive_checker.summary()["ok"],
+                "defended": defended_checker.summary()["ok"],
+                "undefended": undefended_checker.summary()["ok"],
+            },
+            "believed_success_vs_real": {
+                "believes_goal_achieved": learner_defended.state()["believes_goal_achieved"],
+                "real_effects": len(defended_profile["real_production_effects"]),
+            },
+        },
+    }
+
+
+def _retries_of_denied(ecosystem, agent_id: str) -> int:
+    """How often an agent re-attempted a capability it had already been denied."""
+    seen_denied: set[str] = set()
+    retries = 0
+    for event in ecosystem.observatory.telemetry.events(agent_id):
+        if event.capability in seen_denied:
+            retries += 1
+        if event.decision == "DENY":
+            seen_denied.add(event.capability)
+    return retries

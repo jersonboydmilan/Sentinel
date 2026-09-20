@@ -179,10 +179,15 @@ of these is ever observed:
 * an audit mutation goes undetected, or two identical runs disagree on the audit
   head hash.
 
-Three experiments that *could* falsify the thesis are **not yet implemented**
-and are stated as open: a learning adversary; two colluding verifiers; and
-compromise of the human root or emergency-key holder, who are trusted by
-construction. A fourth - physical separation of verification - is now
+Two experiments that *could* falsify the thesis are **not yet implemented** and
+are stated as open: two colluding verifiers, and compromise of the human root or
+emergency-key holder, who are trusted by construction. A learning adversary is
+now implemented (`adaptive/learning-adversary`) and produces the sharpest result
+in the project: adaptation delays verified detection from 2 to 9 steps, gains no
+authority (prevention 1.00, zero real effects), and converges to acting inside
+its own grant - where the answer is escalation of the chain rather than
+containment of an agent. What remains open is a stronger learner with access to
+peer outcomes or the defensive cycle period. A fourth - physical separation of verification - is now
 implemented across processes (`ais/verifier/`), though not yet across hosts or
 user accounts.
 

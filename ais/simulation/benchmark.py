@@ -24,6 +24,7 @@ from .scenarios import (
     run_false_positive_scenario,
     run_gradual_drift_experiment,
     run_key_experiment,
+    run_learning_adversary_experiment,
     run_quarantine_escape_suite,
     run_race_condition_experiment,
 )
@@ -158,6 +159,32 @@ def benchmark_quarantine_escape() -> BenchmarkResult:
                 name: attempt.get("stopped_by") or attempt.get("invariant")
                 for name, attempt in result["attempts"].items()
             },
+        },
+        wall_seconds=time.perf_counter() - started,
+    )
+
+
+def benchmark_learning_adversary(steps: int = 40) -> BenchmarkResult:
+    """Adaptive adversary: detection degrades, enforcement does not."""
+    started = time.perf_counter()
+    result = run_learning_adversary_experiment(steps)
+    return BenchmarkResult(
+        name="adaptive/learning-adversary",
+        metrics={
+            "naive": {k: v for k, v in result["naive"].items() if k != "drift_kinds"},
+            "learner_defended": {
+                k: v for k, v in result["learner_defended"].items() if k not in {"drift_kinds"}
+            },
+            "learner_undefended": {
+                k: v for k, v in result["learner_undefended"].items() if k not in {"drift_kinds"}
+            },
+            "adaptation": result["adaptation"],
+            "enforcement": result["enforcement"],
+            "no_real_effects": (
+                not result["enforcement"]["naive_real_effects"]
+                and not result["enforcement"]["learner_real_effects"]
+                and not result["enforcement"]["learner_real_effects_undefended"]
+            ),
         },
         wall_seconds=time.perf_counter() - started,
     )
@@ -340,6 +367,7 @@ def run_all(steps: int = 20, *, include_sweeps: bool = True) -> dict:
         benchmark_race_conditions(),
         benchmark_quarantine_escape(),
         benchmark_cross_process_verification(),
+        benchmark_learning_adversary(),
     ]
     if include_sweeps:
         results.extend([sweep_observation_loss(), sweep_sentinel_interval(), sweep_population_scale()])
@@ -367,6 +395,13 @@ def _all_hard_checks_pass(payload: dict) -> bool:
         "false_flag_authority_unchanged": by_name["adaptive/false-flag-detector"]["authority_unchanged"],
         "no_false_positive_containment": by_name["false-positives/benign-burst"]["false_positive_rate"] == 0.0,
         "cross_process_verification": by_name["verification/cross-process"]["all_passed"],
+        # Detection may degrade against an adaptive adversary - that is a
+        # finding, not a failure. Enforcement may not.
+        "learning_adversary_no_real_effects": by_name["adaptive/learning-adversary"]["no_real_effects"],
+        "learning_adversary_prevention": all(
+            rate == 1.0
+            for rate in by_name["adaptive/learning-adversary"]["enforcement"]["prevention_rate"].values()
+        ),
     }
     payload["hard_checks"] = checks
     return all(checks.values())
