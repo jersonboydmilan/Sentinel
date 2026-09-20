@@ -48,8 +48,11 @@ class ImmuneSystem:
         verification = self.verifications.validate(claimed, subject)
         authorization_ref = request.payload.get("authorization_ref")
         matches = self.match_agent(subject)
+        verifiers = self.verifications.independent_verifiers(subject)
         return {
             "verification_valid": verification is not None,
+            "verification_count": len(verifiers),
+            "independent_verifiers": verifiers,
             "verification_confidence": verification.confidence if verification else 0.0,
             "verification_subject": verification.subject_id if verification else None,
             "external_authorization_valid": self.authorizations.validate(authorization_ref, subject, "restore"),
@@ -76,8 +79,18 @@ class ImmuneSystem:
         drift = observatory.drift_report(agent_id)
         anomaly = observatory.anomaly_report(agent_id)
         events = observatory.telemetry.events(agent_id)
-        policy_violations = sum(1 for event in events if not event.allowed)
+        # A HOLD or ESCALATE is a *pending* decision awaiting human review, not
+        # a violation by the agent. Counting it as one would let the system
+        # manufacture its own evidence and escalate a relationship finding into
+        # containment of an agent that never exceeded its authority.
+        policy_violations = sum(1 for event in events if event.decision == "DENY")
         matches = self.match_agent(agent_id)
+        collusion = observatory.collusion_signals(agent_id)
+        collusion_score = max((signal.score for signal in collusion), default=0.0)
+        collusion_evidence: tuple[str, ...] = ()
+        if collusion:
+            best = max(collusion, key=lambda s: s.score)
+            collusion_evidence = ("collusion", f"partner:{best.partner_agent if best.source_agent == agent_id else best.source_agent}") + best.evidence
         classification = self.classifier.classify(
             agent_id,
             drift=drift,
@@ -93,6 +106,8 @@ class ImmuneSystem:
             authority_involved=sorted(profile.capability_counts),
             memory_matches=matches,
             memory_prior=self.memory.prior(matches),
+            collusion_score=collusion_score,
+            collusion_evidence=collusion_evidence,
             at=self.plane.clock.now,
         )
         self._classifications[agent_id] = classification

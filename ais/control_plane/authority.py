@@ -334,7 +334,20 @@ class AuthorityService:
     # ------------------------------------------------------------------
     # queries
     # ------------------------------------------------------------------
-    def grants_for(self, subject_id: str, *, include_inactive: bool = False) -> list[Grant]:
+    def grants_for(
+        self,
+        subject_id: str,
+        *,
+        include_inactive: bool = False,
+        task_id: str | None = None,
+    ) -> list[Grant]:
+        """Active grants for a subject.
+
+        ``task_id`` applies **context binding**: a grant whose scope names a
+        task contract is usable only inside that contract. Passing ``None``
+        (the default) means "any context", and context-bound grants are then
+        excluded from the answer rather than silently assumed valid.
+        """
         now = self._clock.now
         out = []
         for grant in self._grants.values():
@@ -343,16 +356,19 @@ class AuthorityService:
             if not include_inactive:
                 if grant.grant_id in self._revocations or not grant.active_at(now):
                     continue
+                bound_task = grant.scope.get("task_id")
+                if bound_task is not None and bound_task != task_id:
+                    continue
             out.append(grant)
         return sorted(out, key=lambda g: g.grant_id)
 
-    def granted(self, subject_id: str) -> CapabilitySet:
+    def granted(self, subject_id: str, *, task_id: str | None = None) -> CapabilitySet:
         """Authority on paper, ignoring reversible restrictions."""
-        return CapabilitySet(g.capability for g in self.grants_for(subject_id))
+        return CapabilitySet(g.capability for g in self.grants_for(subject_id, task_id=task_id))
 
-    def effective(self, subject_id: str) -> CapabilitySet:
+    def effective(self, subject_id: str, *, task_id: str | None = None) -> CapabilitySet:
         """Authority actually usable right now (grants minus restrictions)."""
-        return self.granted(subject_id).difference(self.restricted_capabilities(subject_id))
+        return self.granted(subject_id, task_id=task_id).difference(self.restricted_capabilities(subject_id))
 
     def delegable(self, subject_id: str) -> CapabilitySet:
         now = self._clock.now
@@ -363,22 +379,28 @@ class AuthorityService:
         )
         return caps.difference(self.restricted_capabilities(subject_id))
 
-    def has(self, subject_id: str, capability: str | Capability) -> bool:
+    def has(self, subject_id: str, capability: str | Capability, *, task_id: str | None = None) -> bool:
         try:
             cap = assert_representable(capability)
         except ForbiddenCapability:
             return False
-        return self.effective(subject_id).holds(cap)
+        return self.effective(subject_id, task_id=task_id).holds(cap)
 
-    def explain(self, subject_id: str, capability: str) -> dict:
+    def explain(self, subject_id: str, capability: str, *, task_id: str | None = None) -> dict:
         """Why a capability is or is not usable - used in audit evidence."""
         cap = assert_representable(capability)
         matching = [g for g in self.grants_for(subject_id, include_inactive=True) if Capability.parse(g.capability).covers(cap)]
+        context_bound = [
+            g.grant_id
+            for g in matching
+            if g.scope.get("task_id") is not None and g.scope.get("task_id") != task_id
+        ]
         return {
             "subject": subject_id,
             "capability": str(cap),
-            "granted": self.granted(subject_id).holds(cap),
-            "effective": self.has(subject_id, cap),
+            "granted": self.granted(subject_id, task_id=task_id).holds(cap),
+            "effective": self.has(subject_id, cap, task_id=task_id),
+            "context_bound_elsewhere": context_bound,
             "restricted": self.restricted_capabilities(subject_id).holds(cap),
             "revoked_grants": [g.grant_id for g in matching if g.grant_id in self._revocations],
             "expired_grants": [g.grant_id for g in matching if not g.active_at(self._clock.now)],

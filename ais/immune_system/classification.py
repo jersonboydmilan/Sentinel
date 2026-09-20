@@ -100,6 +100,8 @@ class ThreatClassifier:
         authority_involved: list[str],
         memory_matches: list[SignatureMatch] | None = None,
         memory_prior: float = 0.0,
+        collusion_score: float = 0.0,
+        collusion_evidence: tuple[str, ...] = (),
         at: int = 0,
     ) -> Classification:
         matches = memory_matches or []
@@ -107,6 +109,8 @@ class ThreatClassifier:
         evidence: list[str] = []
         evidence.extend(drift.evidence())
         evidence.extend(anomaly.evidence())
+        if collusion_score:
+            evidence.extend(collusion_evidence)
 
         # --- class selection (ordered, deterministic) ---------------------
         if quarantined and escape_attempts > 0:
@@ -125,6 +129,12 @@ class ThreatClassifier:
             threat = ThreatClass.POLICY_VIOLATION
             base = clamp(0.4 + 0.1 * policy_violations)
             rationale.append(f"{policy_violations} denied policy decisions")
+        elif collusion_score >= 0.6:
+            # Split-capability behaviour: neither agent exceeded its own
+            # authority, so this is a relationship finding, not a drift finding.
+            threat = ThreatClass.POLICY_VIOLATION if policy_violations else ThreatClass.ANOMALOUS
+            base = 0.3 + 0.5 * collusion_score
+            rationale.append(f"cross-agent collusion pattern, score {round(collusion_score, 3)}")
         elif anomaly.score >= 0.4:
             threat = ThreatClass.ANOMALOUS
             base = 0.3 + 0.4 * anomaly.score
