@@ -243,12 +243,59 @@ SENTINEL-AUDIT re-derives the same chain from the audit chain
 HOLD/ESCALATE decision is explicitly *not* counted as an agent violation -
 otherwise escalation would manufacture its own evidence.
 
+## 10a. Cross-process verification
+
+The in-process auditors are *logically* independent: they read only the audit
+chain. `ais/verifier/` makes the separation **physical**.
+
+```text
+control-plane process                     verifier process
+─────────────────────                     ────────────────
+SENTINEL-AUDIT-REMOTE                     python -m ais.verifier.service
+  export_records(audit) ──── signed ────▶  verify_chain(records)
+  head hash                  request       derive_authority(records)
+                                           predicates(records, subject)
+                                           supports(claim, predicates)
+  record_remote(verdict) ◀─── signed ────  verdict + chain head + pid
+                             response
+```
+
+What the child process has: a serialised audit chain and a claim. What it does
+not have: the authority service, the observatory, the policy engine, a gateway,
+or any way to act on the ecosystem. It recomputes the hash chain before reading
+a single claim, and derives the subject's grants, revocations and restrictions
+from `authority.*` events rather than being told them.
+
+Four properties follow, each tested:
+
+| Property | Mechanism |
+|---|---|
+| a doctored history cannot buy a confirmation | the child recomputes every record hash → `REJECTED` |
+| a lie about the history cannot either | the caller's claimed head must equal the computed head → `REJECTED` |
+| a verdict cannot be forged by the caller | responses are HMAC-signed with operator-established key material that never passes through a gateway request |
+| losing the verifier loses containment, never gains it | no verdict → POL-110/111/112 stay at HOLD, and `verification.unavailable` is audited |
+
+A crash is survivable: the client respawns the child, which re-derives
+everything from the chain, so respawning cannot launder a claim (tested).
+
+The reconstruction logic (`ais/verifier/reconstruction.py`) is shared verbatim
+with the in-process auditor. One implementation, two transports - which is what
+makes "the same evidence, derived independently" checkable rather than two
+implementations that happen to agree.
+
+Cost on this machine: ~10 ms per verification round trip for a 124-record chain,
+against ~2.7 ms for the same reconstruction in-process. The gap is process
+boundary plus chain transfer; the chain is exported once per audit length and
+reused across subjects in a cycle.
+
 ## 11. Multi-party attestation
 
 Revocation - the only irreversible action - requires **two independent
 verifiers** (`POL-110`, fact `verification_count >= 2`). SENTINEL-AUDIT and
 SENTINEL-AUDIT-2 are separate principals with separate credentials running the
-same reconstruction independently. `independent_verifiers()` counts distinct
+same reconstruction independently; with `remote_verification=True`,
+SENTINEL-AUDIT-REMOTE adds a verifier in a separate OS process, so the two
+required verifiers can be in two different processes. `independent_verifiers()` counts distinct
 principals, so one auditor repeating itself remains one opinion. Compromising a
 single verifier therefore buys a HOLD, not an irreversible action.
 

@@ -33,6 +33,7 @@ from ais.simulation.scenarios import (  # noqa: E402
     run_false_positive_scenario,
     run_gradual_drift_experiment,
     run_key_experiment,
+    run_cross_process_verification_experiment,
     run_quarantine_escape_suite,
     run_race_condition_experiment,
 )
@@ -235,7 +236,26 @@ def demo_containment_integrity() -> dict:
     bullet("production tool calls after quarantine", quarantine["production_invocations_after_quarantine"])
     story("the one bypass that is not prevented (in-process registry call) is detected by the invariant checker")
 
-    print("\n-- 4c. decision-time authority (no grace window) --------------------------")
+    print("\n-- 4c. verification in a separate OS process ------------------------------")
+    cross = run_cross_process_verification_experiment()
+    agreement = cross["independent_agreement"]
+    bullet("control plane pid / verifier pid", f"{agreement['control_plane_pid']} / {agreement['verifier_pid']}")
+    bullet("verdicts agree across processes", agreement["agree"])
+    for name in (
+        "coerced_chain_rejected",
+        "head_mismatch_rejected",
+        "false_claim_refused",
+        "forged_verdict_rejected",
+        "unauthenticated_request_refused",
+        "respawn_not_a_laundering_route",
+        "fails_closed",
+    ):
+        bullet(name, "HANDLED" if cross["summary"][name] else "*** OPEN ***")
+    bullet("round trip vs in-process", f"{cross['latency']['mean_round_trip_ms']} ms vs {cross['latency']['in_process_reference_ms']} ms")
+    story("the verifier receives a serialised audit chain and nothing else; it recomputes every")
+    story("record hash before reading a claim, so a doctored history buys a REJECTED, not a confirmation")
+
+    print("\n-- 4d. decision-time authority (no grace window) --------------------------")
     race = run_race_condition_experiment()
     for key in (
         "before_change",
@@ -245,7 +265,7 @@ def demo_containment_integrity() -> dict:
         "immediately_after_revocation",
     ):
         bullet(key, race[key])
-    return {"escape": escape, "quarantine": quarantine, "race": race}
+    return {"escape": escape, "quarantine": quarantine, "race": race, "cross_process": cross}
 
 
 def demo_false_positives() -> dict:

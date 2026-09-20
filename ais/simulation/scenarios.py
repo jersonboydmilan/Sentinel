@@ -6,6 +6,7 @@ suite and the benchmark harness all assert against the same evidence.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 from ..common.errors import (
@@ -726,3 +727,264 @@ def _forge_sub_contract(plane, agent, contract_id: str) -> dict:
         return {"blocked": False, "stopped_by": None}
     except Exception as exc:
         return {"blocked": True, "stopped_by": type(exc).__name__, "detail": str(exc)[:120]}
+
+
+# ---------------------------------------------------------------------------
+# Cross-process verification (physical two-party independence)
+# ---------------------------------------------------------------------------
+def run_cross_process_verification_experiment(steps: int = 16) -> dict:
+    """Verification in a separate OS process, and four ways to attack it.
+
+    The claim under test is narrow and checkable: a verifier that holds nothing
+    but the serialised audit chain (a) can still reproduce evidence, (b) cannot
+    be coerced into confirming a claim the chain does not support, and (c) when
+    it is unavailable, the system loses containment rather than gaining it.
+    """
+    import io
+    import time
+
+    from ..defensive_agents.remote_auditor import SentinelAuditRemote
+    from ..verifier import protocol, service
+    from ..verifier.client import RemoteVerifier
+    from ..verifier.reconstruction import export_records
+    from .agents import Compromised01, Normal01
+
+    ecosystem = Ecosystem(EcosystemConfig(sentinel_interval=4, remote_verification=True))
+    ecosystem.add_agent(Normal01())
+    ecosystem.add_agent(Compromised01())
+    results: dict = {}
+
+    try:
+        ecosystem.run(steps)
+        remote = ecosystem.sentinel.audit_remote
+        plane = ecosystem.plane
+        subject = "COMPROMISED-01"
+
+        # --- 1. does the separate process reach the same conclusion? -------
+        cross = [v for v in ecosystem.immune.verifications.for_subject(subject) if v.transport == "cross-process"]
+        in_process = [v for v in ecosystem.immune.verifications.for_subject(subject) if v.transport == "in-process"]
+        results["independent_agreement"] = {
+            "cross_process_verdicts": [v.verdict for v in cross],
+            "in_process_verdicts": [v.verdict for v in in_process],
+            "agree": bool(cross) and bool(in_process) and {v.verdict for v in cross} == {v.verdict for v in in_process},
+            "verifier_pid": remote.verifier.pid,
+            "control_plane_pid": os.getpid(),
+            "distinct_processes": remote.verifier.pid != os.getpid(),
+            "containment": [event.action.value for event in plane.containment.history(subject)],
+            "benign_agent_contained": bool(plane.containment.history("NORMAL-01")),
+        }
+
+        records, head = remote._chain()
+
+        # --- 2. coerced chain: the caller doctors the history it supplies ---
+        doctored = [dict(record) for record in records]
+        victim = min(5, len(doctored) - 1)
+        doctored[victim]["payload"] = {"decision": "ALLOW", "forged": True}
+        coerced = remote.verifier.verify(
+            audit=plane.audit,
+            subject_id="NORMAL-01",
+            claimed_classification="COMPROMISED",
+            claimed_confidence=1.0,
+            records=doctored,
+            expected_head=head,
+        )
+        results["coerced_chain"] = {
+            "verdict": coerced["verdict"] if coerced else None,
+            "evidence": (coerced or {}).get("evidence", [])[:3],
+            "rejected": bool(coerced) and coerced["verdict"] == "REJECTED",
+        }
+
+        # --- 3. head mismatch: truthful records, false claim about them -----
+        head_lie = remote.verifier.verify(
+            audit=plane.audit,
+            subject_id=subject,
+            claimed_classification="COMPROMISED",
+            claimed_confidence=1.0,
+            records=records,
+            expected_head="0" * 64,
+        )
+        results["head_mismatch"] = {
+            "verdict": head_lie["verdict"] if head_lie else None,
+            "rejected": bool(head_lie) and head_lie["verdict"] == "REJECTED",
+        }
+
+        # --- 4. false claim about an innocent agent, truthful chain ---------
+        innocent = remote.verifier.verify(
+            audit=plane.audit,
+            subject_id="NORMAL-01",
+            claimed_classification="COMPROMISED",
+            claimed_confidence=1.0,
+            records=records,
+            expected_head=head,
+        )
+        results["false_claim_about_innocent"] = {
+            "verdict": innocent["verdict"] if innocent else None,
+            "unsatisfied": (innocent or {}).get("evidence", [])[:3],
+            "refused": bool(innocent) and innocent["verdict"] != "CONFIRMED",
+        }
+
+        # --- 5. starved verifier: truthful claim, empty evidence ------------
+        starved = remote.verifier.verify(
+            audit=plane.audit,
+            subject_id=subject,
+            claimed_classification="COMPROMISED",
+            claimed_confidence=1.0,
+            records=[],
+            expected_head="",
+        )
+        results["empty_chain"] = {
+            "verdict": starved["verdict"] if starved else None,
+            "refused": bool(starved) and starved["verdict"] != "CONFIRMED",
+        }
+
+        # --- 6. forged verdict: a response signed with the wrong key --------
+        wrong_key_service = io.StringIO()
+        forged_request = protocol.signed(
+            "attacker-key",
+            protocol.VerifyRequest(
+                request_id="VRQ-FORGED",
+                nonce="deadbeef",
+                subject_id="NORMAL-01",
+                claimed_classification="COMPROMISED",
+                claimed_confidence=1.0,
+                expected_head=head,
+                records=records,
+            ).as_payload(),
+        )
+        service.serve(
+            "attacker-key",
+            stdin=io.StringIO(protocol.encode(forged_request) + "\n"),
+            stdout=wrong_key_service,
+        )
+        forged_response = protocol.decode(wrong_key_service.getvalue().strip())
+        results["forged_verdict"] = {
+            "signature_valid_under_operator_key": protocol.verify_signature(remote.verifier._key, forged_response),
+            "rejected": not protocol.verify_signature(remote.verifier._key, forged_response),
+            "note": "an attacker can run their own verifier, but cannot sign a verdict the control plane will accept",
+        }
+
+        # --- 7. unauthenticated request to the real verifier ----------------
+        stray = io.StringIO()
+        stray_request = {
+            **protocol.VerifyRequest(
+                request_id="VRQ-STRAY",
+                nonce="abcd",
+                subject_id=subject,
+                claimed_classification="COMPROMISED",
+                claimed_confidence=1.0,
+                expected_head=head,
+                records=records,
+            ).as_payload(),
+            "signature": "0" * 64,
+        }
+        service.serve(remote.verifier._key, stdin=io.StringIO(protocol.encode(stray_request) + "\n"), stdout=stray)
+        stray_response = protocol.decode(stray.getvalue().strip())
+        results["unauthenticated_request"] = {
+            "op": stray_response.get("op"),
+            "reason": stray_response.get("reason"),
+            "refused": stray_response.get("reason") == "bad_request_signature",
+        }
+
+        # --- 8. latency overhead --------------------------------------------
+        started = time.perf_counter()
+        for _ in range(3):
+            remote.verifier.verify(
+                audit=plane.audit,
+                subject_id=subject,
+                claimed_classification="COMPROMISED",
+                claimed_confidence=1.0,
+                records=records,
+                expected_head=head,
+            )
+        results["latency"] = {
+            "records_shipped": len(records),
+            "mean_round_trip_ms": round((time.perf_counter() - started) * 1000.0 / 3, 2),
+            "in_process_reference_ms": round(_in_process_verification_ms(plane, subject), 3),
+            "stats": remote.verifier.stats.as_dict(),
+        }
+
+        # --- 9a. crash and respawn: survivable, and not a laundering route --
+        crashed_pid = remote.verifier.pid
+        remote.verifier._process.kill()
+        remote.verifier._process.wait(timeout=5)
+        after_crash = remote.verifier.verify(
+            audit=plane.audit,
+            subject_id=subject,
+            claimed_classification="COMPROMISED",
+            claimed_confidence=1.0,
+            records=records,
+            expected_head=head,
+        )
+        false_claim_after_respawn = remote.verifier.verify(
+            audit=plane.audit,
+            subject_id="NORMAL-01",
+            claimed_classification="COMPROMISED",
+            claimed_confidence=1.0,
+            records=records,
+            expected_head=head,
+        )
+        results["crash_and_respawn"] = {
+            "crashed_pid": crashed_pid,
+            "new_pid": remote.verifier.pid,
+            "respawned": remote.verifier.pid != crashed_pid,
+            "verdict_after_respawn": (after_crash or {}).get("verdict"),
+            "false_claim_after_respawn": (false_claim_after_respawn or {}).get("verdict"),
+            "respawn_is_not_a_laundering_route": (false_claim_after_respawn or {}).get("verdict") != "CONFIRMED",
+        }
+
+        # --- 9b. outage: verification unavailable must lose containment -----
+        authority_before = plane.authority.effective("NORMAL-01").as_strings()
+        unavailable_before = len(plane.audit.search(event_type="verification.unavailable"))
+        remote.verifier.disable("simulated verifier outage")
+        fabricated = ecosystem.sentinel.detect.raise_unfounded_flag("NORMAL-01")
+        unavailable_verification = remote.verify(fabricated)
+        containment_attempt = ecosystem.sentinel.contain.act(
+            "agent.quarantine",
+            subject="NORMAL-01",
+            payload={"reason": "verifier down", "confidence": 0.99},
+        )
+        results["fail_closed"] = {
+            "verifier_available": remote.verifier.alive and not remote.verifier.disabled,
+            "verification_returned": unavailable_verification is not None,
+            "audit_records_of_unavailability": len(plane.audit.search(event_type="verification.unavailable"))
+            - unavailable_before,
+            "containment_allowed": containment_attempt.allowed,
+            "containment_effect": containment_attempt.result.effect.value,
+            "authority_unchanged": authority_before == plane.authority.effective("NORMAL-01").as_strings(),
+        }
+        remote.verifier.enable()
+
+        summary = {
+            "independent_agreement": results["independent_agreement"]["agree"],
+            "distinct_processes": results["independent_agreement"]["distinct_processes"],
+            "coerced_chain_rejected": results["coerced_chain"]["rejected"],
+            "head_mismatch_rejected": results["head_mismatch"]["rejected"],
+            "false_claim_refused": results["false_claim_about_innocent"]["refused"],
+            "empty_chain_refused": results["empty_chain"]["refused"],
+            "forged_verdict_rejected": results["forged_verdict"]["rejected"],
+            "unauthenticated_request_refused": results["unauthenticated_request"]["refused"],
+            "respawn_not_a_laundering_route": results["crash_and_respawn"]["respawn_is_not_a_laundering_route"],
+            "fails_closed": (
+                not results["fail_closed"]["verification_returned"]
+                and not results["fail_closed"]["containment_allowed"]
+                and results["fail_closed"]["authority_unchanged"]
+            ),
+        }
+        results["summary"] = summary
+        results["all_passed"] = all(summary.values())
+        results["ecosystem"] = ecosystem
+        return results
+    finally:
+        ecosystem.close()
+
+
+def _in_process_verification_ms(plane, subject_id: str) -> float:
+    """Reference cost of the same reconstruction without a process boundary."""
+    import time
+
+    from ..verifier import reconstruction
+
+    records = reconstruction.export_records(plane.audit)
+    started = time.perf_counter()
+    reconstruction.verdict_for(records, subject_id, "COMPROMISED", 1.0)
+    return (time.perf_counter() - started) * 1000.0

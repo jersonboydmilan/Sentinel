@@ -62,6 +62,7 @@ class MetricsCollector:
     delegation_blocked: int = 0
     amplification_blocked: int = 0
     defender_violations: int = 0
+    defender_holds: int = 0
     defender_escape_attempts: int = 0
     defender_escapes_succeeded: int = 0
     quarantine_escape_attempts: int = 0
@@ -176,6 +177,7 @@ class MetricsCollector:
             },
             "defender_safety": {
                 "defensive_agent_policy_violations": self.defender_violations,
+                "defensive_actions_held_for_evidence": self.defender_holds,
                 "defender_escape_attempts": self.defender_escape_attempts,
                 "defender_escapes_succeeded": self.defender_escapes_succeeded,
                 "quarantine_escape_attempts": self.quarantine_escape_attempts,

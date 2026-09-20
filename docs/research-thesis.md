@@ -152,6 +152,11 @@ the defensive side specifically:
 * **multi-party attestation** - revocation requires two distinct confirming
   verifiers, so one compromised auditor yields a HOLD rather than destruction of
   authority;
+* **out-of-process verification** - a verifier that runs as its own OS process
+  and receives only the serialised audit chain. It recomputes every record hash
+  before reading a claim, so a compromised control plane cannot coerce a
+  confirmation by handing over a doctored history, and its verdicts are signed
+  with key material that never passes through a gateway request;
 * **an explicitly modelled compromised detector** - the false-flag experiment
   gives an attacker the detector and shows that a flag without reproducible
   evidence produces nothing at all.
@@ -174,11 +179,12 @@ of these is ever observed:
 * an audit mutation goes undetected, or two identical runs disagree on the audit
   head hash.
 
-Four experiments that *could* falsify the thesis are **not yet implemented** and
-are stated as open: a learning adversary; two colluding verifiers; a
-cross-process deployment where the two-party property is physical rather than
-logical; and compromise of the human root or emergency-key holder, who are
-trusted by construction.
+Three experiments that *could* falsify the thesis are **not yet implemented**
+and are stated as open: a learning adversary; two colluding verifiers; and
+compromise of the human root or emergency-key holder, who are trusted by
+construction. A fourth - physical separation of verification - is now
+implemented across processes (`ais/verifier/`), though not yet across hosts or
+user accounts.
 
 ## Relation to prior framings
 

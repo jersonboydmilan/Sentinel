@@ -46,7 +46,7 @@ These are assumptions, not findings. Each one, if relaxed, would change results:
 
 | Assumption | In this prototype | If relaxed |
 |---|---|---|
-| Single process, single trust domain | control plane, observatory, SENTINEL share a process | a host compromise defeats two-party verification; verification should be a separate service |
+| Single process, single trust domain | control plane, observatory and SENTINEL share a process; **verification optionally does not** (`remote_verification=True` runs it as a separate OS process) | same-host, same-user separation only: a host compromise still defeats it. A different user or machine would close that gap without protocol changes |
 | Complete mediation | every agent action arrives as an `ActionRequest` | an unmediated side channel (shared filesystem, direct socket) is outside the model; only the invariant checker would notice a tool-level bypass |
 | Deterministic scripted agents | intent is fixed per step | an adaptive adversary can shape behaviour to the detector; detection numbers would degrade, enforcement numbers would not |
 | Static, hand-authored policy | 24 policies, digest-checked | a wrong policy is a wrong decision; integrity ≠ correctness |
@@ -57,7 +57,7 @@ These are assumptions, not findings. Each one, if relaxed, would change results:
 ### 1.4 Commands
 
 ```bash
-python3 -m unittest discover -s tests -t .        # 148 tests
+python3 -m unittest discover -s tests -t .        # 171 tests
 python3 -m ais benchmark --out results.json       # every number below
 python3 -m ais demo --trace                       # narrated walkthrough
 python3 -m ais trace --scenario key --html t.html # reviewable per-decision report
@@ -85,6 +85,7 @@ byte-reproducible.
 | `adaptive/false-flag-detector` | compromised detector fabricates evidence |
 | `adversarial/decision-time-authority` | restriction/expiry/revocation applied between submissions |
 | `adversarial/quarantine-escape-suite` | nine containment bypasses |
+| `verification/cross-process` | out-of-process verifier: agreement, coercion, forgery, outage, latency |
 | `sweep/observation-loss` | detection versus partial observability |
 | `sweep/sentinel-interval` | detection latency versus cycle period |
 | `sweep/population-scale` | latency, throughput and invariants versus agent count |
@@ -199,6 +200,36 @@ The third row is stated as detection, not prevention, on purpose: an in-process
 call requires code execution inside the control-plane process, which is outside
 the modelled boundary. Claiming prevention there would be false.
 
+### 4.4a Cross-process verification
+
+With `remote_verification=True`, SENTINEL-AUDIT-REMOTE runs as a separate OS
+process (`python -m ais.verifier.service`) that receives only the serialised
+audit chain and returns an HMAC-signed verdict. Ten checks, all passing:
+
+| Check | Result |
+|---|---|
+| independent agreement with in-process auditors | CONFIRMED = CONFIRMED (identical verdicts, different processes) |
+| distinct processes | verifier pid ≠ control-plane pid |
+| doctored chain supplied by the caller | **REJECTED** (`audit_chain_broken`, index named) |
+| truthful chain, false claimed head | **REJECTED** (`chain_head_mismatch`) |
+| false claim about an innocent agent | INCONCLUSIVE, with the unsatisfied predicates named |
+| empty chain, truthful claim | not CONFIRMED (no evidence, no confirmation) |
+| verdict signed with an attacker key | rejected by the client's signature check |
+| unsigned request to the real verifier | `bad_request_signature` |
+| crash mid-run | respawns, still refuses an unsupported claim - respawning is not a laundering route |
+| verifier outage | no verdict, `verification.unavailable` audited, containment stays **HOLD**, victim authority unchanged |
+
+Cost: **9.8 ms** mean round trip for a 124-record chain, against **2.7 ms** for
+the same reconstruction in-process — roughly 7 ms of process boundary and chain
+transfer per verification. The chain is exported once per audit length and
+reused across subjects within a cycle, so the cost is per verification round,
+not per agent.
+
+What this changes in the claim: the two-party property is no longer "the auditor
+only *reads* the chain" but "the auditor only *receives* the chain". The
+remaining gap is host-level: both processes run on the same machine as the same
+user (see §1.3).
+
 ### 4.5 Partial observability sweep
 
 | observation loss | events dropped | detection rate | flag FPR | **containment FPR** | mean TTD | prevention |
@@ -291,6 +322,8 @@ name is the falsification procedure.
 | F11 | a benign agent reaches containment (containment FPR > 0) | `false-positives/benign-burst`, and the observation-loss sweep at every level |
 | F12 | two identical benchmark runs disagree on the audit head hash | `benchmark_population(...).reproducible` |
 | F13 | an invariant violation occurs during a clean run | `population/20-steps → metrics.invariants.ok` |
+| F14 | the out-of-process verifier confirms a claim the chain does not support, or accepts a doctored chain | `verification/cross-process` (`coerced_chain_rejected`, `false_claim_refused`, `empty_chain_refused`) |
+| F15 | a verdict the verifier did not sign is accepted, or losing the verifier makes containment *easier* | `forged_verdict_rejected`, `fails_closed` |
 
 Experiments that *would* falsify the claim but are not yet implemented, and are
 therefore open:
@@ -298,8 +331,6 @@ therefore open:
 * a **learning adversary** that adapts to observed containment decisions;
 * a **compromised auditor pair** (both verifiers colluding) — currently the
   design assumes at most one compromised verifier;
-* **cross-process** deployment, where verification runs under separate
-  credentials and the two-party property is physical rather than logical;
 * **operator compromise**: root authority and the emergency key are trusted by
   construction, so nothing in this repository tests that boundary.
 
@@ -312,8 +343,10 @@ single wrong policy priority (as already happened once) is most costly.
 ## 7. Limitations
 
 1. **Scripted adversaries do not adapt.** See §0.
-2. **Single process.** Verification is logically independent, not physically
-   isolated.
+2. **Process separation, not host separation.** Verification can run in its own
+   OS process (`remote_verification=True`) and is then driven only through a
+   signed protocol, but both processes share a host and a user account. It is
+   also off by default, because it costs ~10 ms per verification.
 3. **No language models in the loop.** Deliberate, for reproducibility.
 4. **Small population.** 10–31 agents; latency and throughput characterise the
    implementation, not a deployment.
@@ -334,7 +367,7 @@ single wrong policy priority (as already happened once) is most costly.
 
 ```bash
 git clone <repo> && cd agent-immune-system
-python3 -m unittest discover -s tests -t . -v      # 148 tests, ~9 s
+python3 -m unittest discover -s tests -t . -v      # 171 tests, ~12 s
 python3 -m ais benchmark --out results.json        # exits non-zero if a hard check fails
 python3 -m ais demo --trace
 ```

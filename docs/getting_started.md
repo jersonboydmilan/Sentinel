@@ -182,7 +182,47 @@ print(checker.summary())                          # {'ok': True, 'violations': [
 `InvariantChecker(plane, strict=True)` raises on the first violation, which is
 what you want inside a test.
 
-## 8. Where to look next
+## 8. Run verification in a separate process
+
+By default SENTINEL-AUDIT verifies in-process (it reads only the audit chain,
+but shares memory with what it audits). To make the separation physical:
+
+```python
+from ais.simulation.ecosystem import Ecosystem, EcosystemConfig
+from ais.simulation.agents import Compromised01, Normal01
+
+with Ecosystem(EcosystemConfig(sentinel_interval=4, remote_verification=True)) as eco:
+    eco.add_agent(Normal01())
+    eco.add_agent(Compromised01())
+    eco.run(16)
+    print(eco.sentinel.verification_transports())
+    # {'in_process': 4, 'cross_process': 2, 'remote_health': {...}}
+```
+
+`SENTINEL-AUDIT-REMOTE` spawns `python -m ais.verifier.service`, ships the
+serialised chain, and accepts the verdict only if it is HMAC-signed with the
+operator key, answers this exact request, and reports the chain intact. Use the
+context manager (or call `eco.close()`) so the child process is shut down.
+
+Things worth knowing:
+
+* **fail closed** - if the verifier is unavailable, no verification is recorded,
+  `verification.unavailable` is audited, and containment policies stay at
+  `HOLD`. Losing the verifier never makes containment easier.
+* **cost** - roughly 10 ms per verification round trip for a 124-record chain,
+  against 2.7 ms for the same reconstruction in-process. The chain is exported
+  once per audit length, not once per subject.
+* **one implementation** - `ais/verifier/reconstruction.py` is used by both the
+  in-process auditor and the child process, so the two transports cannot drift
+  apart.
+
+To see it attacked:
+
+```bash
+python3 -m ais experiment cross-process | head -40
+```
+
+## 9. Where to look next
 
 | Question | Document |
 |---|---|

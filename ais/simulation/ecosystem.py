@@ -36,6 +36,9 @@ class EcosystemConfig:
     #: observability). Enforcement is unaffected; only detection degrades.
     observation_loss: float = 0.0
     observation_seed: str = "observatory"
+    #: Run SENTINEL-AUDIT-REMOTE in a separate OS process (physical two-party
+    #: verification). Adds process spawn and chain-transfer cost.
+    remote_verification: bool = False
 
 
 class Ecosystem:
@@ -51,7 +54,12 @@ class Ecosystem:
             seed=self.config.observation_seed,
         )
         self.immune = ImmuneSystem(self.plane, self.observatory, memory_path=self.config.memory_path)
-        self.sentinel = Sentinel(self.plane, self.observatory, self.immune)
+        self.sentinel = Sentinel(
+            self.plane,
+            self.observatory,
+            self.immune,
+            remote_verification=self.config.remote_verification,
+        )
         self.metrics = MetricsCollector()
         self.agents: dict[str, ScriptedAgent] = {}
         self.contracts: dict[str, str] = {}
@@ -189,6 +197,7 @@ class Ecosystem:
             for action in outcome.executed:
                 self.metrics.record_containment(outcome.agent_id, action, self.step_index)
         self.metrics.defender_violations = len(self.sentinel.defender_violations())
+        self.metrics.defender_holds = len(self.sentinel.defender_holds())
         return report
 
     def run(self, steps: int) -> MetricsCollector:
@@ -231,6 +240,16 @@ class Ecosystem:
                 attempts = self.immune.escape_attempts(agent_id)
                 self.metrics.quarantine_escape_attempts += attempts
         self.metrics.audit_tamper_detected = 0 if self.plane.audit.verify().valid else 1
+
+    def close(self) -> None:
+        """Release external resources (the out-of-process verifier, if any)."""
+        self.sentinel.close()
+
+    def __enter__(self) -> "Ecosystem":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     # -- convenience -------------------------------------------------------
     def state(self) -> dict:

@@ -6,7 +6,7 @@
     python3 -m ais trace [--scenario NAME] [--html F] [--json F] [--dot F]
 
 Experiments: key, delegation, defender, false-positives, gradual-drift,
-collusion, false-flag, race, quarantine-escape.
+collusion, false-flag, race, quarantine-escape, cross-process.
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ def _trace(argv: list[str]) -> int:
             "gradual-drift": scenarios.run_gradual_drift_experiment,
             "false-flag": scenarios.run_false_flag_experiment,
             "quarantine-escape": scenarios.run_quarantine_escape_suite,
+            "cross-process": scenarios.run_cross_process_verification_experiment,
         }
         if args.scenario not in runners:
             print(f"unknown scenario: {args.scenario}; choose from {sorted(runners)}", file=sys.stderr)
@@ -95,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             "false-flag": scenarios.run_false_flag_experiment,
             "race": scenarios.run_race_condition_experiment,
             "quarantine-escape": scenarios.run_quarantine_escape_suite,
+            "cross-process": scenarios.run_cross_process_verification_experiment,
         }
         if name not in runners:
             print(f"unknown experiment: {name}; choose from {sorted(runners)}", file=sys.stderr)

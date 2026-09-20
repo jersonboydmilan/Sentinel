@@ -21,6 +21,7 @@ from .containment import ContainmentOutcome, SentinelContain
 from .detector import Flag, SentinelDetect
 from .forensics import ForensicReport, SentinelForensics
 from .recovery import SentinelRecovery
+from .remote_auditor import SentinelAuditRemote
 
 
 @dataclass
@@ -44,13 +45,35 @@ class CycleReport:
 
 
 class Sentinel:
-    def __init__(self, plane: ControlPlane, observatory: Observatory, immune: ImmuneSystem) -> None:
+    """Schedules the defensive cycle. Holds no authority of its own.
+
+    ``remote_verification=True`` adds a verifier that runs in a **separate OS
+    process** and sees nothing but the serialised audit chain, so the two-party
+    property becomes physical rather than logical. It is additive: the
+    in-process auditors keep running, and POL-110 counts distinct confirming
+    verifiers regardless of transport.
+    """
+
+    def __init__(
+        self,
+        plane: ControlPlane,
+        observatory: Observatory,
+        immune: ImmuneSystem,
+        *,
+        remote_verification: bool = False,
+        verifier_timeout: float = 15.0,
+    ) -> None:
         self.plane = plane
         self.observatory = observatory
         self.immune = immune
         self.detect = SentinelDetect(plane, observatory, immune)
         self.audit = SentinelAudit(plane, observatory, immune)
         self.audit_secondary = SentinelAuditSecondary(plane, observatory, immune)
+        self.audit_remote: SentinelAuditRemote | None = (
+            SentinelAuditRemote(plane, observatory, immune, timeout=verifier_timeout)
+            if remote_verification
+            else None
+        )
         self.contain = SentinelContain(plane, observatory, immune)
         self.forensics = SentinelForensics(plane, observatory, immune)
         self.recovery = SentinelRecovery(plane, observatory, immune)
@@ -59,7 +82,10 @@ class Sentinel:
 
     @property
     def agents(self) -> list:
-        return [self.detect, self.audit, self.audit_secondary, self.contain, self.forensics, self.recovery]
+        agents = [self.detect, self.audit, self.audit_secondary, self.contain, self.forensics, self.recovery]
+        if self.audit_remote is not None:
+            agents.insert(3, self.audit_remote)
+        return agents
 
     def agent_ids(self) -> list[str]:
         return [agent.agent_id for agent in self.agents]
@@ -78,6 +104,12 @@ class Sentinel:
             secondary = self.audit_secondary.verify(flag)
             if secondary is not None:
                 verifications.append(secondary.as_dict())
+            if self.audit_remote is not None:
+                remote = self.audit_remote.verify(flag)
+                if remote is not None:
+                    verifications.append(remote.as_dict())
+                else:
+                    rejected.append(f"{flag.agent_id}:remote_verifier_unavailable")
             if verification is None:
                 rejected.append(f"{flag.agent_id}:verification_unavailable")
                 continue
@@ -128,12 +160,52 @@ class Sentinel:
     def _has_signature(self, agent_id: str) -> bool:
         return any(signature.source_agent == agent_id for signature in self.immune.memory.all())
 
+    def close(self) -> None:
+        """Shut down any out-of-process verifier owned by this coordinator."""
+        if self.audit_remote is not None:
+            self.audit_remote.close()
+
+    def verification_transports(self) -> dict:
+        return {
+            "in_process": len(self.immune.verifications.by_transport("in-process")),
+            "cross_process": len(self.immune.verifications.by_transport("cross-process")),
+            "remote_health": self.audit_remote.health() if self.audit_remote is not None else None,
+        }
+
     def defender_violations(self) -> list[dict]:
-        """Every defensive action refused by the control plane (metric: defender safety)."""
+        """Defensive actions attempted *outside* the agent's declared authority.
+
+        A containment request that a policy HOLDs for insufficient evidence is
+        the system working as designed, not the defender misbehaving, so it is
+        reported separately by ``defender_holds``.
+        """
         violations = []
         for agent in self.agents:
-            for action in agent.denied_actions():
+            declared = set(agent.DECLARED_CAPABILITIES)
+            for action in agent.actions:
+                if action.action in declared:
+                    continue
                 violations.append(
+                    {
+                        "agent": agent.agent_id,
+                        "action": action.action,
+                        "subject": action.subject,
+                        "effect": action.result.effect.value,
+                        "allowed": action.allowed,
+                        "policy": action.result.policy_id,
+                    }
+                )
+        return violations
+
+    def defender_holds(self) -> list[dict]:
+        """In-authority defensive actions the control plane refused or held."""
+        holds = []
+        for agent in self.agents:
+            declared = set(agent.DECLARED_CAPABILITIES)
+            for action in agent.denied_actions():
+                if action.action not in declared:
+                    continue
+                holds.append(
                     {
                         "agent": agent.agent_id,
                         "action": action.action,
@@ -142,4 +214,4 @@ class Sentinel:
                         "policy": action.result.policy_id,
                     }
                 )
-        return violations
+        return holds

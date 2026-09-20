@@ -30,6 +30,9 @@
 | A11 | Compromised detector | holds `agent.observe`/`agent.flag` and fabricates evidence against an innocent agent |
 | A12 | Race-condition agent | submits continuously, hoping a revocation, restriction or expiry leaves a grace window |
 | A13 | Partial-observability attacker | operates where telemetry is lossy, so the observatory sees only part of its behaviour |
+| A14 | Coercive caller | controls the process that talks to the verifier and supplies a doctored or misdescribed audit chain, hoping for a confirmation |
+| A15 | Verdict forger | mints a verification result without the verifier's key, or replays a valid verdict against a different subject or request |
+| A16 | Verifier-outage attacker | disables, hangs or crashes the verifier, hoping the system degrades towards permitting containment (or towards permitting anything) |
 
 ## 3. Trust boundaries
 
@@ -79,6 +82,9 @@ verification ledger can make that true.
 | partial observability (A13) | enforcement depends on authority, not observation; verification absorbs observation noise | `sweep/observation-loss`: prevention 1.00 and containment FPR 0.00 at every loss level |
 | gateway bypass (in-process) | not prevented; detected by invariants P1/P8 comparing tool calls to production-routed ALLOWs | `test_gateway_bypass_is_detected`; quarantine suite row 3 |
 | over-long authority lifetime | context-bound grants (`scope.task_id`) are usable only inside the issuing contract | `ContextBoundGrantTests` |
+| coerced verification (A14) | the verifier process recomputes every record hash and compares the caller's claimed head to the computed head before reading any claim | `verification/cross-process`: `coerced_chain_rejected`, `head_mismatch_rejected`, `empty_chain_refused` |
+| forged or replayed verdict (A15) | responses are HMAC-signed with operator key material that never passes through a gateway request; the client also binds request id and nonce | `forged_verdict_rejected`, `unauthenticated_request_refused`, `test_verdict_signed_with_another_key_is_not_accepted` |
+| verifier outage (A16) | fail closed: no verdict means POL-110/111/112 stay at HOLD, and the absence is audited | `fails_closed`; `test_outage_records_unavailability_and_blocks_containment` |
 
 ## 5. Explicitly out of scope
 
@@ -120,10 +126,16 @@ merely adding a test:
    The architecture's guarantee is then reduced to "it can only do what it was
    granted" — which is the point of the authority model, but it is a smaller
    claim than "it will be detected".
-2. **Verification shares an implementation with detection.** SENTINEL-AUDIT
-   re-derives evidence from the audit chain, but runs in the same process. A
-   process-level compromise defeats the two-party property; a production
-   deployment should run it as a separate service with its own credentials.
+2. **Verification can now run out of process, and by default does not.**
+   `Sentinel(..., remote_verification=True)` runs SENTINEL-AUDIT-REMOTE as a
+   separate OS process that receives only the serialised chain and returns a
+   signed verdict, so a compromise of the control-plane process no longer
+   implies a compromised verifier. Two residual gaps remain: the default
+   configuration is still in-process (the remote verifier costs ~10 ms per
+   verification), and both processes run on the same host under the same user,
+   so a host-level compromise still defeats the separation. A production
+   deployment would run the verifier under a different user or on a different
+   machine; the protocol is already the only interface.
 3. **Policy is a hand-authored artefact.** A wrong policy is a wrong decision.
    The integrity digest protects against mutation, not against bad authorship.
 4. **Ground-truth labels in the simulation are ours.** The measured detection
