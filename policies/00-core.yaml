@@ -1,0 +1,152 @@
+# Core operational policy set.
+#
+# Evaluation order is (-priority, id). `match` selects on request shape,
+# `when` selects on facts, `conditions` decide ALLOW vs `otherwise`.
+# Anything that matches no policy is denied by POL-000-DEFAULT-DENY (P7).
+policies:
+  - id: POL-001-QUARANTINE-CONFINEMENT
+    description: A quarantined agent may only act inside its sandbox registry.
+    priority: 100
+    match:
+      action: "*"
+    when:
+      - fact: quarantined
+        equals: true
+    conditions:
+      - fact: sandboxed
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-002-EXPIRED-OR-REVOKED-AUTHORITY
+    description: Revoked or expired authority stops execution regardless of agent intent (P6).
+    priority: 99
+    match:
+      action: "*"
+    when:
+      - fact: capability_held
+        equals: false
+    conditions:
+      - fact: capability_held
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-085-HIGH-RISK-GATE
+    description: Any action whose composite risk is critical is restricted rather than executed.
+    priority: 85
+    match:
+      action: "*"
+    when:
+      - fact: risk_score
+        gte: 0.85
+    conditions:
+      - fact: risk_score
+        lt: 0.85
+    effect: ALLOW
+    otherwise: RESTRICT
+
+  - id: POL-020-DELEGATION
+    description: Delegation must stay inside the delegator's delegable authority (P3).
+    priority: 80
+    match:
+      action: "agent.delegate"
+    conditions:
+      - fact: capability_held
+        equals: true
+      - fact: contract_in_scope
+        equals: true
+      - fact: delegation_within_authority
+        equals: true
+      - fact: risk_score
+        lt: 0.8
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-021-AGENT-CREATION
+    description: Creating new agents requires explicit authority and an in-scope contract.
+    priority: 78
+    match:
+      action: "agent.create"
+    conditions:
+      - fact: capability_held
+        equals: true
+      - fact: contract_in_scope
+        equals: true
+      - fact: drift_score
+        lt: 0.5
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-030-CREDENTIAL-ACCESS
+    description: Credential reads are high sensitivity and escalate when drift is present.
+    priority: 70
+    match:
+      action: "credential.read"
+    conditions:
+      - fact: capability_held
+        equals: true
+      - fact: contract_in_scope
+        equals: true
+      - fact: drift_score
+        lt: 0.3
+      - fact: risk_score
+        lt: 0.5
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-017-DATABASE-WRITE
+    description: Writes require the capability and an approved task scope.
+    priority: 60
+    match:
+      action: "database.write"
+    conditions:
+      - fact: capability_held
+        equals: true
+      - fact: contract_in_scope
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-050-NETWORK-EGRESS
+    description: Outbound traffic is limited to endpoints declared in the task contract.
+    priority: 50
+    match:
+      action: "network.egress"
+    conditions:
+      - fact: capability_held
+        equals: true
+      - fact: contract_in_scope
+        equals: true
+      - fact: endpoint_expected
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-051-MESSAGE-SEND
+    description: Inter-agent messaging requires capability and contract scope.
+    priority: 45
+    match:
+      action: "message.send"
+    conditions:
+      - fact: capability_held
+        equals: true
+      - fact: contract_in_scope
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-090-OPERATIONAL-DEFAULT
+    description: Generic operational allow - capability plus contract scope plus acceptable risk.
+    priority: 10
+    match:
+      action: "*"
+    conditions:
+      - fact: capability_held
+        equals: true
+      - fact: contract_in_scope
+        equals: true
+      - fact: risk_score
+        lt: 0.85
+    effect: ALLOW
+    otherwise: DENY

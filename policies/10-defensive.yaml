@@ -1,0 +1,200 @@
+# Defensive authority policy set (section 11, principles 4 and 5).
+#
+# SENTINEL agents are governed by the same engine they protect. These policies
+# are what make "recursive governance" real rather than rhetorical.
+policies:
+  - id: POL-100-DEFENDER-OPERATIONAL-BAN
+    description: Defensive agents may not exercise operational capabilities at all.
+    priority: 96
+    match:
+      action: "*"
+      subject_kind: [DEFENSIVE_AGENT]
+    when:
+      - fact: capability_is_defensive
+        equals: false
+    conditions:
+      - fact: capability_is_defensive
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-101-DEFENSIVE-CAPABILITY-REQUIRES-DEFENSIVE-PRINCIPAL
+    # Deliberately lower priority than every specific containment policy, so it
+    # can never pre-empt an evidence requirement (POL-110 to POL-124).
+    description: "Catch-all: only defensive agents may use the defensive namespace."
+    priority: 88
+    match:
+      action: "agent.*"
+    when:
+      - fact: capability_is_defensive
+        equals: true
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-110-IRREVERSIBLE-CONTAINMENT
+    description: Revocation and quarantine need independent verification and high confidence.
+    priority: 94
+    match:
+      action: "agent.revoke"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+      - fact: verification_valid
+        equals: true
+      - fact: verification_confidence
+        gte: 0.85
+    effect: ALLOW
+    otherwise: HOLD
+
+  - id: POL-111-QUARANTINE-REQUIRES-VERIFICATION
+    description: Quarantine is reversible but still requires verified evidence.
+    priority: 93
+    match:
+      action: "agent.quarantine"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+      - fact: verification_valid
+        equals: true
+      - fact: verification_confidence
+        gte: 0.7
+    effect: ALLOW
+    otherwise: HOLD
+
+  - id: POL-112-RESTRICTION-EVIDENCE
+    description: Restriction is reversible and needs verified evidence at a lower bar.
+    priority: 92
+    match:
+      action: "agent.restrict"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+      - fact: verification_valid
+        equals: true
+      - fact: verification_confidence
+        gte: 0.5
+    effect: ALLOW
+    otherwise: HOLD
+
+  - id: POL-113-RESTORE-REQUIRES-EXTERNAL-AUTHORIZATION
+    description: Recovery may only restore an agent with an external authorization reference.
+    priority: 91
+    match:
+      action: "agent.restore"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+      - fact: external_authorization_valid
+        equals: true
+    effect: ALLOW
+    otherwise: HOLD
+
+  - id: POL-120-OBSERVE-AND-FLAG
+    description: Observation and flagging are always available to detectors holding them.
+    priority: 90
+    match:
+      action: "agent.observe"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-121-FLAG
+    description: Flagging an agent is an observation-grade action (P4).
+    priority: 90
+    match:
+      action: "agent.flag"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-122-ANALYZE-REPLAY
+    description: Forensic analysis and replay operate on recorded evidence only.
+    priority: 90
+    match:
+      action: "agent.analyze"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-123-REPLAY
+    description: Replay is limited to quarantined or recorded sessions.
+    priority: 90
+    match:
+      action: "agent.replay"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
+
+  - id: POL-124-ISOLATE
+    description: Isolation is reversible containment with verified evidence.
+    priority: 92
+    match:
+      action: "agent.isolate"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+      - fact: verification_valid
+        equals: true
+      - fact: verification_confidence
+        gte: 0.6
+    effect: ALLOW
+    otherwise: HOLD
+
+  - id: POL-130-IMMUNE-MEMORY-WRITE
+    description: Writing an immune signature requires forensics authority and confirmed outcome.
+    priority: 90
+    match:
+      action: "immune.write"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+      - fact: verification_valid
+        equals: true
+    effect: ALLOW
+    otherwise: HOLD
+
+  - id: POL-131-IMMUNE-MEMORY-READ
+    description: Immune memory is readable by defensive agents holding immune.read.
+    priority: 89
+    match:
+      action: "immune.read"
+    conditions:
+      - fact: is_defensive_agent
+        equals: true
+      - fact: capability_held
+        equals: true
+    effect: ALLOW
+    otherwise: DENY
