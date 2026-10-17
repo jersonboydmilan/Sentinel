@@ -251,6 +251,10 @@ The most valuable contribution is a **failing test**: the claims and the
 experiment that would falsify each one are listed in
 [evaluation §6](docs/evaluation.md).
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=jersonboydmilan/Sentinel&type=Date)](https://star-history.com/#jersonboydmilan/Sentinel&Date)
+
 ## License
 
 MIT — see [LICENSE](LICENSE). If you use the prototype or its results, see
